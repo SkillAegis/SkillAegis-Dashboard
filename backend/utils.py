@@ -64,20 +64,19 @@ def eval_data_filtering(inject_evaluation: dict, data: dict, context: dict, debu
 
 # Replace the substring `{{variable}}` by context[variable] or the jq_path in the provided string
 def apply_replacement_from_context(string: str, context: dict) -> str:
-    replacement_regex = r"{{(.+)}}"
     string = str(string)
-    if r'{{' not in string and r'}}' not in string:
-        return string
-    matches = re.search(replacement_regex, string, re.MULTILINE)
-    if not matches:
-        return string
-    subst_str = matches.groups()[0]
-    subst = context.get(subst_str, None)
-    if subst is None:
-        subst =  jq_extract(subst_str, context)
-        if subst is None:
-            subst = ''
-    return re.sub(replacement_regex, str(subst), string)
+
+    # Non-greedy regex to match each placeholder separately
+    replacement_regex = r"{{(.*?)}}"
+
+    def replacer(match):
+        key = match.group(1)
+        value = context.get(key)
+        if value is None:
+            value = jq_extract(key, context) or ""
+        return str(value)
+
+    return re.sub(replacement_regex, replacer, string)
 
 
 def jq_extract(path: str, data: dict, extract_type='first'):
