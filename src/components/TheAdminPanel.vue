@@ -12,13 +12,10 @@ import ToolsDiagnostic from '@/components/adminPanel/ToolsDiagnostic.vue'
 import ControlButtons from '@/components/adminPanel/ControlButtons.vue'
 import { checkUserAuthenticated, userAuthenticated } from '@/socket'
 import LoginForm from '@/components/adminPanel/LoginForm.vue'
+import { adminPanelOpen } from '@/settings.js'
 
 let authChecher = null
 const activeTab = ref('control-panel')
-const showModal = ref(false)
-function showTheModal() {
-  showModal.value = true
-}
 
 onMounted(() => {
   checkUserAuthenticated()
@@ -34,17 +31,8 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <span class="group relative inline-block min-w-6 min-h-6">
-      <span className="absolute top-1 right-1 leading-3 opacity-100 group-hover:opacity-0 transition-opacity text-slate-400/70 -z-10">
-        <FontAwesomeIcon :icon="faScrewdriverWrench" size="xs"></FontAwesomeIcon>
-      </span>
-      <button @click="showTheModal()" class="group-hover:block hidden btn btn-info mt-1 mr-1">
-        <FontAwesomeIcon :icon="faScrewdriverWrench" class="mr-1"></FontAwesomeIcon>
-        Admin panel
-      </button>
-    </span>
-
-    <Modal :showModal="showModal" @modal-close="showModal = false">
+    <!-- Opened from the dashboard header gear icon (settings.js: adminPanelOpen) -->
+    <Modal :showModal="adminPanelOpen" @modal-close="adminPanelOpen = false">
       <template #header>
         <h2 class="text-2xl font-bold">
           <FontAwesomeIcon :icon="faScrewdriverWrench" class=""></FontAwesomeIcon>
