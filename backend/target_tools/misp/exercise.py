@@ -5,6 +5,7 @@ import re
 from typing import Union
 
 from backend.appConfig import logger
+from backend.utils import apply_replacement_from_context
 import backend.db as db
 import backend.misp_api as misp_api
 
@@ -35,7 +36,7 @@ async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dic
         logger.warning('Evaluation strategy not specified in inject')
         return False
 
-    data_to_validate = await get_data_to_validate(user_id, inject_evaluation, data)
+    data_to_validate = await get_data_to_validate(user_id, inject_evaluation, data, context)
     if data_to_validate is None:
         logger.debug('Could not fetch data to validate')
         return False
@@ -53,7 +54,7 @@ async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dic
     return False
 
 
-async def get_data_to_validate(user_id: int, inject_evaluation: dict, data: dict) -> Union[dict, list, str, None]:
+async def get_data_to_validate(user_id: int, inject_evaluation: dict, data: dict, context: dict = {}) -> Union[dict, list, str, None]:
     data_to_validate = None
     if inject_evaluation['evaluation_strategy'] == 'data_filtering':
         event_id = parse_event_id_from_log(data)
@@ -62,9 +63,9 @@ async def get_data_to_validate(user_id: int, inject_evaluation: dict, data: dict
         perfomed_query = parse_performed_query_from_log(data)
         data_to_validate = await fetch_data_for_query_mirror(user_id, inject_evaluation, perfomed_query)
     elif inject_evaluation['evaluation_strategy'] == 'query_search':
-        data_to_validate = await fetch_data_for_query_search(user_id, inject_evaluation)
+        data_to_validate = await fetch_data_for_query_search(user_id, inject_evaluation, context)
     elif inject_evaluation['evaluation_strategy'] == 'python':
-        data_to_validate = await fetch_data_for_query_search(user_id, inject_evaluation)
+        data_to_validate = await fetch_data_for_query_search(user_id, inject_evaluation, context)
     return data_to_validate
 
 
@@ -119,6 +120,7 @@ def is_accepted_query(data: dict) -> bool:
         return url in [
             '/attributes/restSearch',
             '/events/restSearch',
+            '/events/view',
             '/events/index',
             '/users/view/me',
         ]
@@ -187,7 +189,7 @@ async def fetch_data_for_query_mirror(user_id: int, inject_evaluation: dict, per
     return data
 
 
-async def fetch_data_for_query_search(user_id: int, inject_evaluation: dict) -> Union[None, dict]:
+async def fetch_data_for_query_search(user_id: int, inject_evaluation: dict, context: dict = {}) -> Union[None, dict]:
     authkey = await get_api_key_or_gen_new_one(user_id)
     if 'evaluation_context' not in inject_evaluation and 'query_context' not in inject_evaluation['evaluation_context']:
         return None
@@ -195,6 +197,14 @@ async def fetch_data_for_query_search(user_id: int, inject_evaluation: dict) -> 
     if query_context is None:
         logger.warning('Could not fetch data for query search. No query context provided.')
         return None
+    try:
+        replaced_context = apply_replacement_from_context(
+            json.dumps(query_context),
+            context
+        )
+        query_context = json.loads(replaced_context)
+    except:
+        pass
     search_method = query_context['request_method']
     search_url = query_context['url']
     search_payload = query_context.get('payload', {})
