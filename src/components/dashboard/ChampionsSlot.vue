@@ -1,15 +1,28 @@
 <script setup>
-import { champions } from './dashboardState.js'
+import { champions, nextScene, setScene } from './dashboardState.js'
 </script>
 
 <template>
   <div
     class="sa-slot"
     :style="{ borderColor: champions.slotBorder, background: champions.slotBg }"
+    role="button"
+    tabindex="0"
+    title="Click to switch view"
+    @click="nextScene()"
+    @keydown.enter.prevent="nextScene()"
+    @keydown.space.prevent="nextScene()"
   >
-    <!-- scene dots -->
+    <!-- scene dots (click a dot to jump straight to that view) -->
     <div style="position:absolute;top:14px;right:16px;display:flex;align-items:center;gap:5px;z-index:2;">
-      <div v-for="(d, i) in champions.sceneDots" :key="i" :style="{ height: '6px', width: d.w + 'px', borderRadius: '3px', background: d.bg, transition: 'width .4s,background .4s' }"></div>
+      <div
+        v-for="(d, i) in champions.sceneDots"
+        :key="i"
+        style="cursor:pointer;padding:6px 0;"
+        @click.stop="setScene(i)"
+      >
+        <div :style="{ height: '6px', width: d.w + 'px', borderRadius: '3px', background: d.bg, transition: 'width .4s,background .4s' }"></div>
+      </div>
     </div>
 
     <!-- ON FIRE -->
@@ -77,6 +90,11 @@ import { champions } from './dashboardState.js'
   border-radius: 16px;
   padding: 13px 16px;
   height: 188px;
+  cursor: pointer;
   transition: border-color 0.6s, background 0.6s;
+}
+.sa-slot:focus-visible {
+  outline: 2px solid rgba(207, 227, 255, 0.6);
+  outline-offset: 2px;
 }
 </style>

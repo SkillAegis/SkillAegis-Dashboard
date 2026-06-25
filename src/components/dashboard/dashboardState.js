@@ -84,6 +84,30 @@ setInterval(() => {
 }, 1000)
 
 /* ------------------------------------------------------------------ */
+/* Champion slot scene control (auto-rotate, overridable by clicking)  */
+/* ------------------------------------------------------------------ */
+const SCENE_COUNT = 3 // On Fire / Speed Runner / Trophies
+export const currentScene = ref(0)
+let lastSceneChange = now.value
+
+// Auto-advance on the shared clock; a manual pick resets the dwell timer
+// so the chosen scene gets a full SCENE_MS before rotation resumes.
+watch(now, (t) => {
+  if (t - lastSceneChange >= SCENE_MS) {
+    currentScene.value = (currentScene.value + 1) % SCENE_COUNT
+    lastSceneChange = t
+  }
+})
+
+export function setScene(i) {
+  currentScene.value = ((i % SCENE_COUNT) + SCENE_COUNT) % SCENE_COUNT
+  lastSceneChange = now.value
+}
+export function nextScene() {
+  setScene(currentScene.value + 1)
+}
+
+/* ------------------------------------------------------------------ */
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
 function splitEmail(email) {
@@ -395,7 +419,7 @@ const TROPHY_GLYPHS = {
 }
 
 export const champions = computed(() => {
-  const scene = Math.floor(now.value / SCENE_MS) % 3
+  const scene = currentScene.value
 
   // On fire — minutes spent on fire
   const fireRanked = (userStats.value?.time_on_fire || [])
