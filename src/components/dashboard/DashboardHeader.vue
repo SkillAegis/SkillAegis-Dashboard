@@ -28,7 +28,7 @@ function pill(active, rgb) {
 }
 
 function goFullscreen() {
-  const el = document.querySelector('[data-sa-root]') || document.documentElement
+  const el = document.querySelector('[data-sa-leaderboard]') || document.documentElement
   if (el.requestFullscreen) el.requestFullscreen().catch(() => {})
   else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen()
 }

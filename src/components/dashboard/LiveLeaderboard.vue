@@ -84,7 +84,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <section class="sa-board">
+  <section class="sa-board" data-sa-leaderboard>
     <div style="display:flex;align-items:center;gap:12px;padding:11px 22px 9px;">
       <span style="font-size:17px;font-weight:700;letter-spacing:2px;color:#eaf3ff;">LIVE LEADERBOARD</span>
       <span class="sa-mono" style="font-size:12px;color:#5f86b0;letter-spacing:1px;">{{ sortLabel }}</span>
@@ -229,6 +229,11 @@ onUnmounted(() => {
   background: linear-gradient(180deg, rgba(14, 22, 38, 0.92), rgba(9, 15, 26, 0.92));
   overflow: hidden;
   min-height: 0;
+}
+.sa-board:fullscreen {
+  border: none;
+  border-radius: 0;
+  background: #070b14;
 }
 .sa-task {
   transition: filter 0.15s ease, transform 0.1s ease;
