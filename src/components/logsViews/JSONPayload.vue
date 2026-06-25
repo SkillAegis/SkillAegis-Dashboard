@@ -13,7 +13,7 @@ const prePayload = ref(null)
 const isPayloadString = computed(() => typeof props.payload === 'string')
 
 const prettyJson = computed(() =>
-    isPayloadString ? props.payload : JSON.stringify(props.payload, null, 2)
+    isPayloadString.value ? props.payload : JSON.stringify(props.payload, null, 2)
 )
 const jsonKeyAmount = computed(() =>
     Object.keys(props.payload).length
