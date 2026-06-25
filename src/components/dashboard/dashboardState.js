@@ -381,12 +381,15 @@ export const podium = computed(() => {
     .map(({ entry, r }) => {
       const first = r === 0
       const { name } = splitEmail(entry.email)
+      // Badge: the digits embedded in a participant's name (e.g. trainee07 → 07),
+      // falling back to the first two letters when the name has no digits.
+      const digits = name.replace(/\D/g, '').slice(0, 2)
       return {
         id: entry.user_id,
         name,
         score: entry.score,
         rank: r + 1,
-        initials: name.replace(/\D/g, '').slice(0, 2).padStart(2, '0') || name.slice(0, 2).toUpperCase(),
+        initials: digits ? digits.padStart(2, '0') : name.slice(0, 2).toUpperCase(),
         first,
         medal: MEDALS[r],
         glow: first ? 'rgba(255,205,91,.6)' : 'rgba(199,211,230,.3)',
