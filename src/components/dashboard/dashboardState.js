@@ -33,6 +33,7 @@ const SCENE_MS = 7000 // champion slot rotates between scenes this often
 const ROT_MS = 4500 // champion sub-list pages rotate this often
 const CHAMPION_PAGE = 4 // entries per champion sub-list page
 const JUST_SCORED_MS = 1700 // how long the "+N" score pop stays visible
+const BURST_MS = 1600 // how long the all-clear completion burst plays on a row
 
 export { ROW_HEIGHT }
 
@@ -86,7 +87,8 @@ setInterval(() => {
 /* ------------------------------------------------------------------ */
 /* Champion slot scene control (auto-rotate, overridable by clicking)  */
 /* ------------------------------------------------------------------ */
-const SCENE_COUNT = 3 // On Fire / Speed Runner / Trophies
+// On Fire / Speed Runner / Trophies, plus a Finishers scene that appears only
+// once someone has cleared everything (`sceneCount`, defined below, grows to 4).
 export const currentScene = ref(0)
 let lastSceneChange = now.value
 
@@ -94,13 +96,14 @@ let lastSceneChange = now.value
 // so the chosen scene gets a full SCENE_MS before rotation resumes.
 watch(now, (t) => {
   if (t - lastSceneChange >= SCENE_MS) {
-    currentScene.value = (currentScene.value + 1) % SCENE_COUNT
+    currentScene.value = (currentScene.value + 1) % sceneCount.value
     lastSceneChange = t
   }
 })
 
 export function setScene(i) {
-  currentScene.value = ((i % SCENE_COUNT) + SCENE_COUNT) % SCENE_COUNT
+  const n = sceneCount.value
+  currentScene.value = ((i % n) + n) % n
   lastSceneChange = now.value
 }
 export function nextScene() {
@@ -171,23 +174,36 @@ function taskRequirementMet(tasksCompletion, task) {
 /* "Just scored" detection — flash a +N when a user's score grows     */
 /* ------------------------------------------------------------------ */
 const prevScores = {}
+const prevDone = {}
 const gains = reactive({})
+// Set the instant a user's completed-task count reaches the full set, used to
+// fire the one-shot all-clear burst. Only the live transition triggers it — a
+// page reload onto an already-complete board stays calm (prevDone is unseeded).
+const completions = reactive({})
 
 watch(
   () => progresses.value,
   (np) => {
     const ex = selectedExercise.value
     if (!ex) return
+    const tasksLen = ex.tasks.length
     for (const p of Object.values(np)) {
       const exProgress = p.exercises?.[ex.uuid]
       if (!exProgress) continue
       const key = `${p.user_id}|${ex.uuid}`
       const score = exProgress.score ?? 0
-      const prev = prevScores[key]
-      if (prev !== undefined && score > prev) {
-        gains[p.user_id] = { gain: score - prev, at: Date.now() }
+      const prevScore = prevScores[key]
+      if (prevScore !== undefined && score > prevScore) {
+        gains[p.user_id] = { gain: score - prevScore, at: Date.now() }
       }
       prevScores[key] = score
+
+      const done = Object.values(exProgress.tasks_completion || {}).filter((t) => t !== false).length
+      const prevD = prevDone[key]
+      if (prevD !== undefined && tasksLen > 0 && prevD < tasksLen && done >= tasksLen) {
+        completions[p.user_id] = { at: Date.now() }
+      }
+      prevDone[key] = done
     }
   },
   { deep: true }
@@ -227,6 +243,10 @@ export const players = computed(() => {
       const g = gains[p.user_id]
       const justScored = !!g && nowMs - g.at < JUST_SCORED_MS
 
+      const complete = ex.tasks.length > 0 && done >= ex.tasks.length
+      const cmp = completions[p.user_id]
+      const justCompleted = !!cmp && nowMs - cmp.at < BURST_MS
+
       const heatSrc = userActivity.value?.[p.user_id] || []
       const heat = heatSrc.map((v) => ({ bg: heatColor(v) }))
 
@@ -264,6 +284,8 @@ export const players = computed(() => {
         isFire: onFire,
         fireBarPct,
         justScored,
+        complete,
+        justCompleted,
         gain: g?.gain ?? 0,
         heat,
         tasks,
@@ -282,40 +304,52 @@ export const players = computed(() => {
     const top = sortByScore.value && rank < 3 && r.score > 0
     const onFire = r.isFire
     const just = r.justScored
+    // Clearing every task is the headline achievement — its gold/mint treatment
+    // outranks the on-fire, just-scored and top-3 row states.
+    const done100 = r.complete
     return {
       ...r,
       rank: rank + 1,
       y: rank * ROW_HEIGHT,
       opacity: r.active ? 1 : 0.5,
-      scoreColor: onFire
-        ? '#ff8a3c'
-        : just
-          ? '#5be39a'
-          : top
-            ? '#ffcd5b'
-            : r.score === 0
-              ? '#46607f'
-              : '#cfe3ff',
+      scoreColor: done100
+        ? '#ffd970'
+        : onFire
+          ? '#ff8a3c'
+          : just
+            ? '#5be39a'
+            : top
+              ? '#ffcd5b'
+              : r.score === 0
+                ? '#46607f'
+                : '#cfe3ff',
       rankFg: top ? '#0a1322' : '#7e98ba',
       rankBg: top ? MEDALS[rank] : 'rgba(56,210,255,.08)',
       rankBorder: top ? 'transparent' : 'rgba(56,210,255,.18)',
-      rowBg: onFire
-        ? 'rgba(255,120,60,.09)'
-        : just
-          ? 'rgba(91,227,154,.10)'
+      rowBg: done100
+        ? 'linear-gradient(90deg,rgba(91,227,154,.12),rgba(255,205,91,.07))'
+        : onFire
+          ? 'rgba(255,120,60,.09)'
+          : just
+            ? 'rgba(91,227,154,.10)'
+            : top
+              ? 'rgba(255,205,91,.06)'
+              : 'rgba(56,210,255,.03)',
+      rowBorder: done100
+        ? 'rgba(255,205,91,.5)'
+        : onFire
+          ? 'rgba(255,140,70,.4)'
           : top
-            ? 'rgba(255,205,91,.06)'
-            : 'rgba(56,210,255,.03)',
-      rowBorder: onFire
-        ? 'rgba(255,140,70,.4)'
-        : top
-          ? 'rgba(255,205,91,.22)'
-          : 'rgba(56,210,255,.08)',
-      glow: onFire
-        ? '0 0 0 1px rgba(255,140,70,.5),0 0 28px rgba(255,120,60,.3)'
-        : just
-          ? '0 0 0 1px rgba(91,227,154,.6),0 0 26px rgba(91,227,154,.28)'
-          : 'none',
+            ? 'rgba(255,205,91,.22)'
+            : 'rgba(56,210,255,.08)',
+      glow: done100
+        ? '0 0 0 1px rgba(255,205,91,.4),0 0 24px rgba(91,227,154,.22)'
+        : onFire
+          ? '0 0 0 1px rgba(255,140,70,.5),0 0 28px rgba(255,120,60,.3)'
+          : just
+            ? '0 0 0 1px rgba(91,227,154,.6),0 0 26px rgba(91,227,154,.28)'
+            : 'none',
+      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
     }
   })
 })
@@ -405,6 +439,57 @@ export const podium = computed(() => {
       }
     })
 })
+
+/* ------------------------------------------------------------------ */
+/* Finishers honor roll (everyone who cleared every task)             */
+/* ------------------------------------------------------------------ */
+// Finish order is by the timestamp of a participant's final completed task;
+// "clear time" is measured from the exercise start (the earliest completion
+// across all participants — the same anchor used by `elapsed`).
+export const finishers = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return []
+  const tasksLen = ex.tasks.length
+  if (!tasksLen) return []
+
+  let start = Infinity
+  const cleared = []
+  for (const p of Object.values(progresses.value)) {
+    const tc = p.exercises?.[ex.uuid]?.tasks_completion
+    if (!tc) continue
+    let last = 0
+    let count = 0
+    for (const c of Object.values(tc)) {
+      if (c === false) continue
+      count++
+      const ts = (c && c.timestamp ? c.timestamp : 0) * 1000
+      if (ts) {
+        last = Math.max(last, ts)
+        start = Math.min(start, ts)
+      }
+    }
+    if (count >= tasksLen) cleared.push({ user_id: p.user_id, email: p.email, finishedAt: last })
+  }
+  if (!Number.isFinite(start)) start = 0
+
+  cleared.sort((a, b) => a.finishedAt - b.finishedAt || String(a.email).localeCompare(String(b.email)))
+  return cleared.map((d, i) => {
+    const { name, org } = splitEmail(d.email)
+    return {
+      id: d.user_id,
+      name,
+      org,
+      rank: i + 1,
+      first: i === 0,
+      medal: MEDALS[i] || '#9fb4d0',
+      clear: d.finishedAt ? fmtDur(d.finishedAt - start) : '—',
+    }
+  })
+})
+
+// On Fire / Speed / Trophies, plus a fourth Finishers scene once at least one
+// participant has cleared everything. Drives the champion slot's rotation.
+export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
 
 /* ------------------------------------------------------------------ */
 /* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
@@ -523,7 +608,8 @@ function speedTier(frac) {
 }
 
 export const champions = computed(() => {
-  const scene = currentScene.value
+  const scenes = sceneCount.value
+  const scene = currentScene.value % scenes
 
   // On fire — accumulated time-on-fire (seconds), shown as an m:ss clock.
   // Heat tier = fraction of the max earnable fire (totalTasks × fireWindow).
@@ -586,28 +672,42 @@ export const champions = computed(() => {
     }
   })
 
+  const finishersList = finishers.value
+
   return {
     scene,
     showFire: scene === 0,
     showSpeed: scene === 1,
     showTrophies: scene === 2,
-    sceneDots: [0, 1, 2].map((i) => ({
+    showFinishers: scene === 3,
+    sceneDots: Array.from({ length: scenes }, (_, i) => ({
       bg: i === scene ? '#cfe3ff' : 'rgba(120,140,170,.3)',
       w: i === scene ? 18 : 6,
     })),
     slotBorder:
-      scene === 0 ? 'rgba(255,140,70,.32)' : scene === 1 ? 'rgba(54,210,255,.32)' : 'rgba(255,205,91,.26)',
+      scene === 0
+        ? 'rgba(255,140,70,.32)'
+        : scene === 1
+          ? 'rgba(54,210,255,.32)'
+          : scene === 2
+            ? 'rgba(255,205,91,.26)'
+            : 'rgba(91,227,154,.34)',
     slotBg:
       scene === 0
         ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(14,18,30,.9))'
         : scene === 1
           ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(14,18,30,.9))'
-          : 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(14,18,30,.9))',
+          : scene === 2
+            ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(14,18,30,.9))'
+            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(14,18,30,.9))',
     fireLeader,
     fireRest,
     speedLeader,
     speedRest,
     trophies,
+    finishersCount: finishersList.length,
+    finishersLeader: finishersList[0] || null,
+    finishersRest: finishersList.slice(1, 5),
   }
 })
 

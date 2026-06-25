@@ -121,6 +121,10 @@ onMounted(() => {
   45% { transform: scale(1.18); opacity: 1; }
   55% { transform: scale(1.04); opacity: 0.7; }
 }
+@keyframes sa-clear {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 205, 91, 0.35), 0 0 18px rgba(91, 227, 154, 0.18); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 205, 91, 0.6), 0 0 30px rgba(91, 227, 154, 0.34); }
+}
 .sa-rise { animation: sa-rise 0.5s ease; }
 .sa-flame { animation: sa-flame 0.9s infinite; }
 .sa-bolt { animation: sa-bolt 0.9s infinite; }

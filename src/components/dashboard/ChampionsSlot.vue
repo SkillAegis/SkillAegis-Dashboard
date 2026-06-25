@@ -113,6 +113,34 @@ import { champions, nextScene, setScene } from './dashboardState.js'
         </div>
       </div>
     </div>
+
+    <!-- FINISHERS (only present once someone has cleared every task) -->
+    <div v-if="champions.showFinishers" class="sa-rise">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:15px;filter:drop-shadow(0 0 6px rgba(255,205,91,.7));">🏁</span>
+        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#bdf2cf;">FINISHERS</span>
+        <span class="sa-mono" style="font-size:11px;color:#7e98ba;">· {{ champions.finishersCount }} CLEARED</span>
+      </div>
+
+      <!-- first to clear -->
+      <div v-if="champions.finishersLeader" style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+        <span style="font-size:20px;flex:none;line-height:1;filter:drop-shadow(0 0 8px rgba(255,205,91,.85));">🥇</span>
+        <span style="font-size:23px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ champions.finishersLeader.name }}</span>
+        <span class="sa-mono sa-tier" style="color:#ffe08a;border-color:#ffe08a;text-shadow:0 0 8px #ffe08a;">FIRST TO CLEAR</span>
+        <span class="sa-mono" style="font-size:16px;font-weight:800;flex:none;color:#ffcd5b;" title="Clear time">{{ champions.finishersLeader.clear }}</span>
+      </div>
+      <div style="margin-top:6px;height:6px;border-radius:4px;background:linear-gradient(90deg,#5be39a,#36d2ff 60%,#ffcd5b);box-shadow:0 0 10px rgba(91,227,154,.5);"></div>
+
+      <!-- everyone else who cleared, in finish order -->
+      <div style="margin-top:9px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
+        <div v-for="f in champions.finishersRest" :key="f.id" style="display:flex;align-items:center;gap:9px;">
+          <span class="sa-mono" style="font-size:11px;width:14px;text-align:right;flex:none;" :style="{ color: f.medal }">{{ f.rank }}</span>
+          <span style="font-size:13px;color:#dfe9d6;flex:none;width:96px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.name }}</span>
+          <div style="flex:1;height:5px;border-radius:3px;background:rgba(91,227,154,.5);box-shadow:0 0 6px rgba(91,227,154,.4);"></div>
+          <span class="sa-mono" style="font-size:11px;flex:none;color:#9fd9b4;" title="Clear time">{{ f.clear }}</span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

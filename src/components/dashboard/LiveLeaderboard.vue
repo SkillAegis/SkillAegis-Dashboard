@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { registerTimerCallback, unregisterTimerCallback } from '@/utils.js'
 import { userAuthenticated, setCompletedState } from '@/socket'
+import CompletionBurst from './CompletionBurst.vue'
 import {
   players,
   taskLabels,
@@ -135,7 +136,7 @@ onUnmounted(() => {
             height: ROW_HEIGHT + 'px',
             display: 'flex',
             alignItems: 'center',
-            zIndex: p.justScored ? 20 : 1,
+            zIndex: p.justCompleted ? 30 : p.justScored ? 20 : 1,
             opacity: inPage(idx) ? p.opacity : 0,
             pointerEvents: inPage(idx) ? 'auto' : 'none',
             transform: `translateY(${(idx - pageOffset) * ROW_HEIGHT}px)`,
@@ -145,7 +146,7 @@ onUnmounted(() => {
         >
           <div
             style="display:flex;align-items:center;gap:14px;width:100%;height:50px;padding:0 8px 0 0;border-radius:12px;"
-            :style="{ border: `1px solid ${p.rowBorder}`, background: p.rowBg, boxShadow: p.glow }"
+            :style="{ border: `1px solid ${p.rowBorder}`, background: p.rowBg, boxShadow: p.glow, animation: p.rowAnim }"
           >
             <!-- rank -->
             <div style="width:46px;display:flex;align-items:center;justify-content:center;">
@@ -159,6 +160,7 @@ onUnmounted(() => {
             <!-- name + heatmap -->
             <div style="width:236px;display:flex;flex-direction:column;gap:3px;min-width:0;">
               <div style="display:flex;align-items:center;gap:7px;min-width:0;">
+                <span v-if="p.complete" class="sa-medal" title="Cleared every task">🏅</span>
                 <span v-if="p.isFire" class="sa-flame" style="font-size:15px;line-height:1;filter:drop-shadow(0 0 5px rgba(255,120,60,.8));">🔥</span>
                 <div style="min-width:0;flex:1;">
                   <div style="font-weight:600;font-size:15px;color:#eaf3ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;">{{ p.name }}</div>
@@ -173,28 +175,37 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- task strip -->
-            <div style="flex:1;display:flex;gap:5px;align-items:stretch;height:24px;">
-              <div
-                v-for="(t, ti) in p.tasks"
-                :key="ti"
-                class="sa-task"
-                :class="{ clickable: userAuthenticated }"
-                :title="userAuthenticated ? `${t.name} — click to mark ${t.done ? 'incomplete' : 'completed'}` : t.name"
-                style="flex:1;position:relative;border-radius:5px;"
-                :style="{ background: t.bg, border: `1px solid ${t.border}`, boxShadow: t.glow }"
-                @click="toggleTask(p, t)"
-              >
-                <span v-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#36d2ff;"></span>
+            <!-- task strip: fuses into one bar once every task is cleared, but
+                 admins keep the clickable per-task squares to toggle completion -->
+            <div style="flex:1;display:flex;align-items:stretch;height:24px;">
+              <div v-if="p.complete && !userAuthenticated" class="sa-clearbar" style="flex:1;position:relative;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,#5be39a,#36d2ff 55%,#ffcd5b);box-shadow:0 0 12px rgba(91,227,154,.4);">
+                <span class="sa-clearbar-shine"></span>
+              </div>
+              <div v-else style="flex:1;display:flex;gap:5px;align-items:stretch;">
+                <div
+                  v-for="(t, ti) in p.tasks"
+                  :key="ti"
+                  class="sa-task"
+                  :class="{ clickable: userAuthenticated }"
+                  :title="userAuthenticated ? `${t.name} — click to mark ${t.done ? 'incomplete' : 'completed'}` : t.name"
+                  style="flex:1;position:relative;border-radius:5px;"
+                  :style="{ background: t.bg, border: `1px solid ${t.border}`, boxShadow: t.glow }"
+                  @click="toggleTask(p, t)"
+                >
+                  <span v-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#36d2ff;"></span>
+                </div>
               </div>
             </div>
 
             <!-- progress -->
             <div style="width:150px;display:flex;align-items:center;gap:9px;">
-              <div style="flex:1;height:9px;border-radius:6px;background:rgba(56,210,255,.1);overflow:hidden;position:relative;">
-                <div :style="{ height: '100%', width: p.barPct + '%', borderRadius: '6px', background: 'linear-gradient(90deg,#2b7bd6,#36d2ff,#5be39a)', transition: 'width .85s ease', boxShadow: '0 0 12px rgba(54,210,255,.45)' }"></div>
-              </div>
-              <span class="sa-mono" style="font-size:11px;color:#7e98ba;width:34px;">{{ p.doneLabel }}</span>
+              <div v-if="p.complete" class="sa-cleared-pill sa-mono">✓ CLEARED</div>
+              <template v-else>
+                <div style="flex:1;height:9px;border-radius:6px;background:rgba(56,210,255,.1);overflow:hidden;position:relative;">
+                  <div :style="{ height: '100%', width: p.barPct + '%', borderRadius: '6px', background: 'linear-gradient(90deg,#2b7bd6,#36d2ff,#5be39a)', transition: 'width .85s ease', boxShadow: '0 0 12px rgba(54,210,255,.45)' }"></div>
+                </div>
+                <span class="sa-mono" style="font-size:11px;color:#7e98ba;width:34px;">{{ p.doneLabel }}</span>
+              </template>
             </div>
 
             <!-- score -->
@@ -203,6 +214,7 @@ onUnmounted(() => {
               <span v-if="p.justScored && p.gain > 0" class="sa-rise sa-mono" style="position:absolute;right:0;top:-19px;font-size:16px;font-weight:800;color:#5be39a;text-shadow:0 0 10px rgba(91,227,154,.6);">+{{ p.gain }}</span>
             </div>
           </div>
+          <CompletionBurst v-if="p.justCompleted" />
         </div>
       </div>
     </div>
@@ -255,5 +267,44 @@ onUnmounted(() => {
   font-size: 13px;
   color: #46607f;
   z-index: 1;
+}
+/* all-clear: a gold seal by the name, a pill in the progress column, and a
+   slow sheen sweeping the fused task bar */
+.sa-medal {
+  flex: none;
+  font-size: 15px;
+  line-height: 1;
+  filter: drop-shadow(0 0 5px rgba(255, 205, 91, 0.8));
+}
+.sa-cleared-pill {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: #ffe08a;
+  padding: 4px 0;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 205, 91, 0.55);
+  background: rgba(255, 205, 91, 0.1);
+  box-shadow: 0 0 12px rgba(255, 205, 91, 0.2);
+}
+.sa-clearbar-shine {
+  position: absolute;
+  top: 0;
+  left: -40%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  animation: sa-shine 2.8s ease-in-out infinite;
+}
+@keyframes sa-shine {
+  0% {
+    left: -40%;
+  }
+  60%,
+  100% {
+    left: 120%;
+  }
 }
 </style>
