@@ -78,6 +78,9 @@ def get_user_stats(selected_exercices: list, completion_for_users: dict) -> dict
         "time_on_fire": get_time_on_fire(selected_exercices, completion_for_users),
         "speed_runner": get_speed_runner(selected_exercices, completion_for_users),
         "trophies": get_trophies(selected_exercices, completion_for_users),
+        "settings": {
+            "time_on_fire_window_sec": leaderboard_settings["time_one_fire_window_sec"],
+        },
     }
 
 

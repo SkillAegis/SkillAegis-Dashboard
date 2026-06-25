@@ -31,17 +31,29 @@ import { champions, nextScene, setScene } from './dashboardState.js'
         <span class="sa-flame" style="font-size:16px;filter:drop-shadow(0 0 6px rgba(255,120,60,.8));">🔥</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#ffb993;">ON FIRE</span>
       </div>
+
+      <!-- leader -->
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
-        <span class="sa-mono" style="font-size:13px;font-weight:800;color:#ff8a3c;flex:none;">1</span>
-        <span style="font-size:24px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ champions.fireLeader.name }}</span>
-        <span class="sa-mono" style="font-size:16px;font-weight:800;color:#ff8a3c;flex:none;">{{ champions.fireLeader.val }}<span style="font-size:10px;color:#5f86b0;">m</span></span>
+        <span
+          style="font-size:20px;flex:none;line-height:1;"
+          :style="{ animation: champions.fireLeader.flameAnim, filter: `drop-shadow(${champions.fireLeader.glow})` }"
+        >🔥</span>
+        <span style="font-size:23px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ champions.fireLeader.name }}</span>
+        <span v-if="champions.fireLeader.label" class="sa-mono sa-tier" :style="{ color: champions.fireLeader.fg, borderColor: champions.fireLeader.fg, textShadow: `0 0 8px ${champions.fireLeader.fg}` }">{{ champions.fireLeader.label }}</span>
+        <span class="sa-mono" style="font-size:16px;font-weight:800;flex:none;" :style="{ color: champions.fireLeader.fg }" title="Time on fire (m:ss)">{{ champions.fireLeader.val }}</span>
       </div>
-      <div style="margin-top:10px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
+      <div style="margin-top:6px;height:6px;border-radius:4px;background:rgba(255,140,70,.12);overflow:hidden;">
+        <div :style="{ height: '100%', width: champions.fireLeader.fill + '%', borderRadius: '4px', background: champions.fireLeader.bar, boxShadow: champions.fireLeader.glow, transition: 'width .8s ease' }"></div>
+      </div>
+
+      <!-- rest -->
+      <div style="margin-top:9px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
         <div v-for="(f, i) in champions.fireRest" :key="i" style="display:flex;align-items:center;gap:9px;">
           <span class="sa-mono" style="font-size:11px;color:#b07a5c;width:14px;text-align:right;flex:none;">{{ f.rank }}</span>
-          <span style="font-size:13px;color:#e6d2c6;flex:none;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.name }}</span>
-          <div style="flex:1;height:5px;border-radius:3px;background:rgba(255,140,70,.12);overflow:hidden;"><div :style="{ height: '100%', width: f.frac + '%', borderRadius: '3px', background: 'linear-gradient(90deg,rgba(255,140,70,.5),#ff8a3c)' }"></div></div>
-          <span class="sa-mono" style="font-size:11px;color:#c79a86;flex:none;">{{ f.val }}m</span>
+          <span style="font-size:13px;color:#e6d2c6;flex:none;width:74px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ f.name }}</span>
+          <span v-if="f.label" class="sa-mono sa-tier-sm" :style="{ color: f.fg, borderColor: f.fg }">{{ f.label }}</span>
+          <div style="flex:1;height:5px;border-radius:3px;background:rgba(255,140,70,.12);overflow:hidden;"><div :style="{ height: '100%', width: f.fill + '%', borderRadius: '3px', background: f.bar, boxShadow: f.glow }"></div></div>
+          <span class="sa-mono" style="font-size:11px;flex:none;" :style="{ color: f.fg }" title="Time on fire (m:ss)">{{ f.val }}</span>
         </div>
       </div>
     </div>
@@ -96,5 +108,23 @@ import { champions, nextScene, setScene } from './dashboardState.js'
 .sa-slot:focus-visible {
   outline: 2px solid rgba(207, 227, 255, 0.6);
   outline-offset: 2px;
+}
+.sa-tier {
+  flex: none;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 999px;
+}
+.sa-tier-sm {
+  flex: none;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border: 1px solid;
+  border-radius: 999px;
 }
 </style>

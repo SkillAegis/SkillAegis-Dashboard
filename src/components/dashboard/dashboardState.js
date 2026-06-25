@@ -140,6 +140,18 @@ function fmtDur(ms) {
   return (h ? p(h) + ':' : '') + p(m) + ':' + p(ss)
 }
 
+// Compact clock for an accumulated duration in seconds: "M:SS"
+// (or "H:MM:SS" past an hour). Used for "time on fire", which is a duration,
+// not a decimal-minutes count.
+function fmtClock(totalSeconds) {
+  const s = Math.max(0, Math.round(Number(totalSeconds) || 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const p = (x) => String(x).padStart(2, '0')
+  return h ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`
+}
+
 const bufferSize = computed(() => userActivityConfig.value?.activity_buffer_size || 0)
 
 function isActive(user_id) {
@@ -397,8 +409,8 @@ export const podium = computed(() => {
 function buildCard(ranked, fmt, fracOf) {
   const rot = Math.floor(now.value / ROT_MS)
   const leader = ranked[0]
-    ? { name: splitEmail(ranked[0].email).name, val: fmt(ranked[0].v) }
-    : { name: '—', val: fmt(0) }
+    ? { name: splitEmail(ranked[0].email).name, val: fmt(ranked[0].v), v: ranked[0].v }
+    : { name: '—', val: fmt(0), v: 0 }
   const rest = ranked.slice(1, 9)
   const pages = Math.max(1, Math.ceil(rest.length / CHAMPION_PAGE))
   const cur = rot % pages
@@ -406,6 +418,7 @@ function buildCard(ranked, fmt, fracOf) {
     rank: cur * CHAMPION_PAGE + i + 2,
     name: splitEmail(e.email).name,
     val: fmt(e.v),
+    v: e.v,
     frac: Math.max(0, Math.min(100, Math.round(fracOf(e.v) * 100))),
   }))
   return { leader, page, pages, cur }
@@ -418,15 +431,68 @@ const TROPHY_GLYPHS = {
   spammer: { icon: '◎', c: '#b08bff' },
 }
 
+const DEFAULT_FIRE_WINDOW_SEC = 240
+
+// Heat tiers keyed on fraction of max earnable time-on-fire; named tiers are
+// reserved for high performers, < 25% stays the unlabelled "Warm" baseline.
+const FIRE_TIERS = [
+  {
+    min: 0.75,
+    label: 'INFERNO',
+    fg: '#ffe08a',
+    bar: 'linear-gradient(90deg,#ff5d3c,#ffb24a 55%,#fff6d8)',
+    glow: '0 0 16px rgba(255,93,60,.85)',
+    flameAnim: 'sa-flame .45s infinite',
+  },
+  {
+    min: 0.5,
+    label: 'BLAZING',
+    fg: '#ff9a5c',
+    bar: 'linear-gradient(90deg,#ff7a3c,#ff5d3c)',
+    glow: '0 0 12px rgba(255,93,60,.6)',
+    flameAnim: 'sa-flame .75s infinite',
+  },
+  {
+    min: 0.25,
+    label: 'HOT',
+    fg: '#ff8a3c',
+    bar: 'linear-gradient(90deg,rgba(255,138,60,.55),#ff8a3c)',
+    glow: '0 0 8px rgba(255,138,60,.5)',
+    flameAnim: 'sa-flame 1.1s infinite',
+  },
+  {
+    min: 0,
+    label: '',
+    fg: '#e0a06a',
+    bar: 'linear-gradient(90deg,rgba(255,178,74,.35),#ffb24a)',
+    glow: 'none',
+    flameAnim: 'sa-flame 1.7s infinite',
+  },
+]
+
+function fireTier(fill) {
+  return FIRE_TIERS.find((t) => fill >= t.min) || FIRE_TIERS[FIRE_TIERS.length - 1]
+}
+
 export const champions = computed(() => {
   const scene = currentScene.value
 
-  // On fire — minutes spent on fire
+  // On fire — accumulated time-on-fire (seconds), shown as an m:ss clock.
+  // Heat tier = fraction of the max earnable fire (totalTasks × fireWindow).
+  const fireWindowSec =
+    userStats.value?.settings?.time_on_fire_window_sec || DEFAULT_FIRE_WINDOW_SEC
+  const totalFireTasks = active_exercises.value.reduce((s, ex) => s + (ex.tasks?.length || 0), 0)
+  const maxEarnableFire = Math.max(1, totalFireTasks * fireWindowSec)
   const fireRanked = (userStats.value?.time_on_fire || [])
     .filter((e) => e.time_on_fire > 0)
-    .map((e) => ({ email: e.email, v: e.time_on_fire / 60 }))
-  const fireMax = fireRanked[0]?.v || 1
-  const fireCard = buildCard(fireRanked, (v) => v.toFixed(1), (v) => v / fireMax)
+    .map((e) => ({ email: e.email, v: e.time_on_fire }))
+  const fireCard = buildCard(fireRanked, (v) => fmtClock(v), (v) => v / maxEarnableFire)
+  const decorateFire = (item) => {
+    const fill = Math.max(0, Math.min(1, item.v / maxEarnableFire))
+    return { ...item, fill: Math.round(fill * 100), ...fireTier(fill) }
+  }
+  const fireLeader = decorateFire(fireCard.leader)
+  const fireRest = fireCard.page.map(decorateFire)
 
   // Speed runner — average seconds per task (lower is better)
   const speedRanked = (userStats.value?.speed_runner || []).map((e) => ({
@@ -471,8 +537,8 @@ export const champions = computed(() => {
         : scene === 1
           ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(14,18,30,.9))'
           : 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(14,18,30,.9))',
-    fireLeader: fireCard.leader,
-    fireRest: fireCard.page,
+    fireLeader,
+    fireRest,
     speedLeader: speedCard.leader,
     speedRest: speedCard.page,
     trophies,
