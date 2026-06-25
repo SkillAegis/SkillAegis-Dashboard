@@ -28,7 +28,7 @@ import {
 /* ------------------------------------------------------------------ */
 /* Tunables (kept in sync with the source design)                     */
 /* ------------------------------------------------------------------ */
-const ROW_HEIGHT = 47 // px, height of a single leaderboard row slot
+const ROW_HEIGHT = 58 // px, height of a single leaderboard row slot (card + vertical padding)
 const SCENE_MS = 7000 // champion slot rotates between scenes this often
 const ROT_MS = 4500 // champion sub-list pages rotate this often
 const CHAMPION_PAGE = 4 // entries per champion sub-list page

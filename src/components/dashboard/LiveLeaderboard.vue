@@ -19,6 +19,10 @@ function toggleTask(player, task) {
   setCompletedState(task.done, player.id, selectedExercise.value.uuid, task.uuid)
 }
 
+// Top room inside the (clipped) rows container so the "+NN" score pop, which
+// floats above a row, isn't cut off for the row at the top of the board.
+const PAD_TOP = 18
+
 const rowsRef = ref(null)
 const rowsPerPage = ref(14)
 const currentPage = ref(0)
@@ -42,7 +46,7 @@ function measure() {
   nextTick(() => {
     const el = rowsRef.value
     if (!el) return
-    const h = el.getBoundingClientRect().height
+    const h = el.getBoundingClientRect().height - PAD_TOP
     if (h > 0) rowsPerPage.value = Math.max(1, Math.floor(h / ROW_HEIGHT))
   })
 }
@@ -112,7 +116,8 @@ onUnmounted(() => {
         minHeight: '0',
         overflowX: 'hidden',
         overflowY: autoPaginate ? 'hidden' : 'auto',
-        margin: '6px 14px 0',
+        margin: '0 14px 0',
+        paddingTop: PAD_TOP + 'px',
       }"
     >
       <div v-if="!selectedExercise" class="sa-empty">No exercise selected — pick one in the admin panel.</div>
@@ -128,6 +133,9 @@ onUnmounted(() => {
             right: '0',
             top: '0',
             height: ROW_HEIGHT + 'px',
+            display: 'flex',
+            alignItems: 'center',
+            zIndex: p.justScored ? 20 : 1,
             opacity: inPage(idx) ? p.opacity : 0,
             pointerEvents: inPage(idx) ? 'auto' : 'none',
             transform: `translateY(${(idx - pageOffset) * ROW_HEIGHT}px)`,
@@ -136,7 +144,7 @@ onUnmounted(() => {
           }"
         >
           <div
-            style="display:flex;align-items:center;gap:14px;height:46px;padding:0 8px 0 0;border-radius:12px;"
+            style="display:flex;align-items:center;gap:14px;width:100%;height:50px;padding:0 8px 0 0;border-radius:12px;"
             :style="{ border: `1px solid ${p.rowBorder}`, background: p.rowBg, boxShadow: p.glow }"
           >
             <!-- rank -->
