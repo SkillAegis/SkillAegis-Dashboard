@@ -1,5 +1,28 @@
 <script setup>
+import { ref, watch, nextTick } from 'vue'
 import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl } from './dashboardState.js'
+
+// Animate the activity timeline as a horizontal slide rather than per-bar height
+// growth. Each update shifts the series one bucket left, so we render the new
+// data, snap the strip one bar-width to the right (lining it up with the previous
+// frame), then ease it back to 0 — reading as a clean one-bar slide.
+const slide = ref('translateX(0)')
+const sliding = ref(false)
+
+watch(
+  () => timeline.value.bars,
+  async () => {
+    const n = timeline.value.bars.length
+    if (!n) return
+    sliding.value = false
+    slide.value = `translateX(${100 / n}%)`
+    await nextTick()
+    requestAnimationFrame(() => {
+      sliding.value = true
+      slide.value = 'translateX(0)'
+    })
+  }
+)
 </script>
 
 <template>
@@ -22,8 +45,10 @@ import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl
     <div style="padding:9px 16px 8px;border-bottom:1px solid rgba(56,210,255,.08);">
       <div style="display:flex;align-items:flex-end;gap:14px;">
         <span class="sa-mono" style="font-size:9px;color:#46607f;white-space:nowrap;">-{{ timeline.windowMin }} min</span>
-        <div style="flex:1;display:flex;align-items:flex-end;gap:2px;height:38px;">
-          <div v-for="(b, i) in timeline.bars" :key="i" :style="{ flex: '1', height: b.h + '%', minHeight: '2px', borderRadius: '2px', background: b.bg, transition: 'height .4s ease' }"></div>
+        <div style="flex:1;height:38px;overflow:hidden;">
+          <div :style="{ display: 'flex', alignItems: 'flex-end', height: '100%', willChange: 'transform', transform: slide, transition: sliding ? 'transform .5s ease-out' : 'none' }">
+            <div v-for="(b, i) in timeline.bars" :key="i" :style="{ flex: '1', height: b.h + '%', minHeight: '2px', background: b.bg }"></div>
+          </div>
         </div>
         <div style="text-align:right;min-width:54px;">
           <div class="sa-mono" style="font-size:10px;color:#7e98ba;">now <span style="color:#36d2ff;font-weight:800;">{{ timeline.tlNow }}</span></div>

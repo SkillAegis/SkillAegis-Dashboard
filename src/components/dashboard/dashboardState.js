@@ -689,6 +689,8 @@ export const apiMessages = notificationAPICounter
 /* 20-min activity timeline                                           */
 /* ------------------------------------------------------------------ */
 export const timeline = computed(() => {
+  // One bar per history bucket (5s each), so the chart advances in lockstep with
+  // the data — each update shifts every bar one slot left, a clean 20-min slide.
   const buckets = Array.from(notificationHistory.value || [])
   const tlMax = Math.max(1, ...buckets)
   const bars = buckets.map((v, i) => ({
