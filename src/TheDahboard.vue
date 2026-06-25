@@ -116,8 +116,14 @@ onMounted(() => {
   0%, 100% { box-shadow: 0 0 22px rgba(255, 205, 91, 0.5), 0 0 0 0 rgba(255, 205, 91, 0.35); }
   50% { box-shadow: 0 0 34px rgba(255, 205, 91, 0.8), 0 0 0 7px rgba(255, 205, 91, 0); }
 }
+@keyframes sa-bolt {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  45% { transform: scale(1.18); opacity: 1; }
+  55% { transform: scale(1.04); opacity: 0.7; }
+}
 .sa-rise { animation: sa-rise 0.5s ease; }
 .sa-flame { animation: sa-flame 0.9s infinite; }
+.sa-bolt { animation: sa-bolt 0.9s infinite; }
 .sa-blink { animation: sa-blink 1.3s infinite; }
 .sa-crown { animation: sa-crown 2.2s ease-in-out infinite; }
 </style>

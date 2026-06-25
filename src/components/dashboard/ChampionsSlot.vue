@@ -64,17 +64,39 @@ import { champions, nextScene, setScene } from './dashboardState.js'
         <span style="font-size:16px;filter:drop-shadow(0 0 6px rgba(54,210,255,.7));">⚡</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#a8e6ff;">SPEED RUNNER</span>
       </div>
+
+      <!-- leader -->
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
-        <span class="sa-mono" style="font-size:13px;font-weight:800;color:#36d2ff;flex:none;">1</span>
-        <span style="font-size:24px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ champions.speedLeader.name }}</span>
-        <span class="sa-mono" style="font-size:16px;font-weight:800;color:#36d2ff;flex:none;">{{ champions.speedLeader.val }}<span style="font-size:10px;color:#5f86b0;">s</span></span>
+        <span
+          style="font-size:20px;flex:none;line-height:1;"
+          :style="{ animation: champions.speedLeader.boltAnim, filter: `drop-shadow(${champions.speedLeader.glow})` }"
+        >⚡</span>
+        <span style="font-size:23px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ champions.speedLeader.name }}</span>
+        <span v-if="champions.speedLeader.label" class="sa-mono sa-tier" :style="{ color: champions.speedLeader.fg, borderColor: champions.speedLeader.fg, textShadow: `0 0 8px ${champions.speedLeader.fg}` }">{{ champions.speedLeader.label }}</span>
+        <span class="sa-mono" style="font-size:16px;font-weight:800;flex:none;" :style="{ color: champions.speedLeader.fg }" title="Speed Index (0–10, where 10 = full clean-run pace)">{{ champions.speedLeader.val }}<span style="font-size:10px;color:#5f86b0;">/10</span></span>
       </div>
-      <div style="margin-top:10px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
+      <div style="margin-top:6px;display:flex;align-items:center;gap:3px;">
+        <div
+          v-for="(seg, i) in champions.speedLeader.segments"
+          :key="i"
+          :style="{ flex: 1, height: '8px', borderRadius: '2px', background: seg.on ? champions.speedLeader.seg : 'rgba(54,210,255,.1)', boxShadow: seg.on ? champions.speedLeader.glow : 'none', transition: 'background .5s,box-shadow .5s' }"
+        ></div>
+      </div>
+
+      <!-- rest -->
+      <div style="margin-top:9px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
         <div v-for="(s, i) in champions.speedRest" :key="i" style="display:flex;align-items:center;gap:9px;">
           <span class="sa-mono" style="font-size:11px;color:#5f86b0;width:14px;text-align:right;flex:none;">{{ s.rank }}</span>
-          <span style="font-size:13px;color:#c7dcea;flex:none;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ s.name }}</span>
-          <div style="flex:1;height:5px;border-radius:3px;background:rgba(54,210,255,.1);overflow:hidden;"><div :style="{ height: '100%', width: s.frac + '%', borderRadius: '3px', background: 'linear-gradient(90deg,rgba(54,210,255,.45),#36d2ff)' }"></div></div>
-          <span class="sa-mono" style="font-size:11px;color:#8fb6d2;flex:none;">{{ s.val }}s</span>
+          <span style="font-size:13px;color:#c7dcea;flex:none;width:74px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ s.name }}</span>
+          <span v-if="s.label" class="sa-mono sa-tier-sm" :style="{ color: s.fg, borderColor: s.fg }">{{ s.label }}</span>
+          <div style="flex:1;display:flex;align-items:center;gap:2px;">
+            <div
+              v-for="(seg, j) in s.segments"
+              :key="j"
+              :style="{ flex: 1, height: '5px', borderRadius: '2px', background: seg.on ? s.seg : 'rgba(54,210,255,.1)', boxShadow: seg.on ? s.glow : 'none' }"
+            ></div>
+          </div>
+          <span class="sa-mono" style="font-size:11px;flex:none;" :style="{ color: s.fg }" title="Speed Index (0–10)">{{ s.val }}</span>
         </div>
       </div>
     </div>

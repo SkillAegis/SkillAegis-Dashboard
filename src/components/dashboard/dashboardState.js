@@ -474,6 +474,51 @@ function fireTier(fill) {
   return FIRE_TIERS.find((t) => fill >= t.min) || FIRE_TIERS[FIRE_TIERS.length - 1]
 }
 
+const SPEED_SEGMENTS = 10
+
+// Speed tiers keyed on the 0-10 Speed Index as a fraction of its ceiling; named
+// tiers are reserved for high performers, < 25% stays the unlabelled baseline.
+// Mirror of the on-fire heat tiers, in a cyan→white-hot palette with a ⚡ pulse
+// that quickens with the tier.
+const SPEED_TIERS = [
+  {
+    min: 0.75,
+    label: 'BLITZ',
+    fg: '#eaffff',
+    seg: '#cdf4ff',
+    glow: '0 0 9px rgba(150,235,255,.95)',
+    boltAnim: 'sa-bolt .5s infinite',
+  },
+  {
+    min: 0.5,
+    label: 'TURBO',
+    fg: '#7fe7ff',
+    seg: '#4fd8ff',
+    glow: '0 0 7px rgba(79,216,255,.7)',
+    boltAnim: 'sa-bolt .8s infinite',
+  },
+  {
+    min: 0.25,
+    label: 'BRISK',
+    fg: '#36d2ff',
+    seg: '#36d2ff',
+    glow: '0 0 5px rgba(54,210,255,.5)',
+    boltAnim: 'sa-bolt 1.2s infinite',
+  },
+  {
+    min: 0,
+    label: '',
+    fg: '#6fa8c8',
+    seg: '#3f7d9c',
+    glow: 'none',
+    boltAnim: 'sa-bolt 1.8s infinite',
+  },
+]
+
+function speedTier(frac) {
+  return SPEED_TIERS.find((t) => frac >= t.min) || SPEED_TIERS[SPEED_TIERS.length - 1]
+}
+
 export const champions = computed(() => {
   const scene = currentScene.value
 
@@ -494,13 +539,31 @@ export const champions = computed(() => {
   const fireLeader = decorateFire(fireCard.leader)
   const fireRest = fireCard.page.map(decorateFire)
 
-  // Speed runner — average seconds per task (lower is better)
-  const speedRanked = (userStats.value?.speed_runner || []).map((e) => ({
-    email: e.email,
-    v: e.avg_time_per_tasks ?? 0,
-  }))
-  const speedBest = speedRanked[0]?.v || 1
-  const speedCard = buildCard(speedRanked, (v) => Math.round(v), (v) => (v ? speedBest / v : 0))
+  // Speed runner — 0-10 Speed Index = speedrunner_score / perfect-run ceiling.
+  // This IS the ranking quantity (monotonic with speedrunner_score), so the
+  // column tracks the leaderboard order — unlike the old avg-points-per-task
+  // value, which was mislabelled "seconds" and didn't track rank.
+  const speedRanked = (userStats.value?.speed_runner || [])
+    .filter((e) => (e.speedrunner_score ?? 0) > 0)
+    .map((e) => ({ email: e.email, v: e.speedrunner_score }))
+  const speedCeiling = Math.max(
+    1e-6,
+    userStats.value?.settings?.speedrunner_score_ceiling || speedRanked[0]?.v || 1
+  )
+  const speedIndex = (v) => Math.max(0, Math.min(10, (v / speedCeiling) * 10))
+  const speedCard = buildCard(speedRanked, (v) => speedIndex(v).toFixed(1), (v) => v / speedCeiling)
+  const decorateSpeed = (item) => {
+    const idx = speedIndex(item.v)
+    const lit = Math.round(idx)
+    return {
+      ...item,
+      fill: Math.round((idx / 10) * 100),
+      segments: Array.from({ length: SPEED_SEGMENTS }, (_, i) => ({ on: i < lit })),
+      ...speedTier(idx / 10),
+    }
+  }
+  const speedLeader = decorateSpeed(speedCard.leader)
+  const speedRest = speedCard.page.map(decorateSpeed)
 
   // Trophies — up to 4 holders
   const trophyObj = userStats.value?.trophies || {}
@@ -539,8 +602,8 @@ export const champions = computed(() => {
           : 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(14,18,30,.9))',
     fireLeader,
     fireRest,
-    speedLeader: speedCard.leader,
-    speedRest: speedCard.page,
+    speedLeader,
+    speedRest,
     trophies,
   }
 })

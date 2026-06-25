@@ -72,6 +72,23 @@ def get_speed_runner(selected_exercices: list, completion_for_users: dict) -> li
     return speedrunner_scores[:9]
 
 
+def get_speedrunner_score_ceiling(selected_exercices: list) -> float:
+    """Speedrunner score of a full clean run — every task completed, accruing the
+    exercise's max_score. This is the theoretical ceiling the dashboard scales its
+    0-10 Speed Index against, mirroring how time-on-fire derives a ceiling from
+    (task_amount x fire_window). Returns 0 when there is nothing to complete."""
+    volume_boost = leaderboard_settings["speedrunner_volume_boost"]
+    speed_boost = leaderboard_settings["speedrunner_speed_boost"]
+    task_amount = 0
+    max_score = 0
+    for exec_uuid in selected_exercices:
+        task_amount += len(db.EXERCISES_STATUS[exec_uuid]["tasks"])
+        max_score += db.EXERCISES_STATUS[exec_uuid]["max_score"]
+    if task_amount == 0 or max_score == 0:
+        return 0
+    return (task_amount ** volume_boost) / (max_score ** speed_boost)
+
+
 def get_user_stats(selected_exercices: list, completion_for_users: dict) -> dict:
     return {
         "hall_of_fame": get_hall_of_fame(selected_exercices, completion_for_users),
@@ -80,6 +97,7 @@ def get_user_stats(selected_exercices: list, completion_for_users: dict) -> dict
         "trophies": get_trophies(selected_exercices, completion_for_users),
         "settings": {
             "time_on_fire_window_sec": leaderboard_settings["time_one_fire_window_sec"],
+            "speedrunner_score_ceiling": get_speedrunner_score_ceiling(selected_exercices),
         },
     }
 
