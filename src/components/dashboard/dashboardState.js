@@ -93,11 +93,19 @@ setInterval(() => {
 // On Fire / Speed Runner / Trophies, plus a Finishers scene that appears only
 // once someone has cleared everything (`sceneCount`, defined below, grows to 4).
 export const currentScene = ref(0)
+// Pinning freezes the rotation on whatever scene is showing (e.g. keep Finishers
+// up for the room). Manual jumps via the scene dots still work while pinned.
+export const scenePinned = ref(false)
 let lastSceneChange = now.value
 
 // Auto-advance on the shared clock; a manual pick resets the dwell timer
-// so the chosen scene gets a full SCENE_MS before rotation resumes.
+// so the chosen scene gets a full SCENE_MS before rotation resumes. While
+// pinned, hold the timer at "now" so unpinning grants a fresh full dwell.
 watch(now, (t) => {
+  if (scenePinned.value) {
+    lastSceneChange = t
+    return
+  }
   if (t - lastSceneChange >= SCENE_MS) {
     currentScene.value = (currentScene.value + 1) % sceneCount.value
     lastSceneChange = t
@@ -111,6 +119,9 @@ export function setScene(i) {
 }
 export function nextScene() {
   setScene(currentScene.value + 1)
+}
+export function toggleScenePinned() {
+  scenePinned.value = !scenePinned.value
 }
 
 /* ------------------------------------------------------------------ */

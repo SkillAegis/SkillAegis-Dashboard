@@ -1,5 +1,11 @@
 <script setup>
-import { champions, nextScene, setScene } from './dashboardState.js'
+import { champions, nextScene, setScene, scenePinned, toggleScenePinned } from './dashboardState.js'
+
+// Body click cycles scenes, but stays put while pinned (the dots remain the
+// deliberate way to change view without unpinning).
+function cycle() {
+  if (!scenePinned.value) nextScene()
+}
 </script>
 
 <template>
@@ -8,20 +14,38 @@ import { champions, nextScene, setScene } from './dashboardState.js'
     :style="{ borderColor: champions.slotBorder, background: champions.slotBg }"
     role="button"
     tabindex="0"
-    title="Click to switch view"
-    @click="nextScene()"
-    @keydown.enter.prevent="nextScene()"
-    @keydown.space.prevent="nextScene()"
+    :title="scenePinned ? 'View pinned — use the dots to change, or unpin to resume rotation' : 'Click to switch view'"
+    @click="cycle()"
+    @keydown.enter.prevent="cycle()"
+    @keydown.space.prevent="cycle()"
   >
-    <!-- scene dots (click a dot to jump straight to that view) -->
-    <div style="position:absolute;top:14px;right:16px;display:flex;align-items:center;gap:5px;z-index:2;">
+    <!-- pin (freeze auto-rotate) + scene dots (click a dot to jump straight to that view) -->
+    <div style="position:absolute;top:12px;right:16px;display:flex;align-items:center;gap:11px;z-index:2;">
       <div
-        v-for="(d, i) in champions.sceneDots"
-        :key="i"
-        style="cursor:pointer;padding:6px 0;"
-        @click.stop="setScene(i)"
+        class="sa-pin"
+        :class="{ 'sa-pin-on': scenePinned }"
+        role="button"
+        tabindex="0"
+        :aria-pressed="scenePinned"
+        :title="scenePinned ? 'Pinned — auto-rotate stopped (click to resume)' : 'Auto-rotating views — click to pin this one'"
+        @click.stop="toggleScenePinned()"
+        @keydown.enter.stop.prevent="toggleScenePinned()"
+        @keydown.space.stop.prevent="toggleScenePinned()"
       >
-        <div :style="{ height: '6px', width: d.w + 'px', borderRadius: '3px', background: d.bg, transition: 'width .4s,background .4s' }"></div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="12" y1="17" x2="12" y2="22"></line>
+          <path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.7l-1.8-.9A2 2 0 0 1 15 10.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1Z"></path>
+        </svg>
+      </div>
+      <div style="display:flex;align-items:center;gap:5px;">
+        <div
+          v-for="(d, i) in champions.sceneDots"
+          :key="i"
+          style="cursor:pointer;padding:6px 0;"
+          @click.stop="setScene(i)"
+        >
+          <div :style="{ height: '6px', width: d.w + 'px', borderRadius: '3px', background: d.bg, transition: 'width .4s,background .4s' }"></div>
+        </div>
       </div>
     </div>
 
@@ -30,6 +54,7 @@ import { champions, nextScene, setScene } from './dashboardState.js'
       <div style="display:flex;align-items:center;gap:8px;">
         <span class="sa-flame" style="font-size:16px;filter:drop-shadow(0 0 6px rgba(var(--sa-fire-rgb),.8));">🔥</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#ffb993;">ON FIRE</span>
+        <span class="sa-mono sa-cap">· time spent on a scoring streak</span>
       </div>
 
       <!-- leader -->
@@ -63,6 +88,7 @@ import { champions, nextScene, setScene } from './dashboardState.js'
       <div style="display:flex;align-items:center;gap:8px;">
         <span style="font-size:16px;filter:drop-shadow(0 0 6px rgba(var(--sa-cyan-rgb),.7));">⚡</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#a8e6ff;">SPEED RUNNER</span>
+        <span class="sa-mono sa-cap">· 10 = perfect clean-run pace</span>
       </div>
 
       <!-- leader -->
@@ -156,6 +182,43 @@ import { champions, nextScene, setScene } from './dashboardState.js'
   transition: border-color 0.6s, background 0.6s;
 }
 .sa-slot:focus-visible {
+  outline: 2px solid rgba(207, 227, 255, 0.6);
+  outline-offset: 2px;
+}
+/* Always-on caption explaining a scene's metric — these only had tooltips,
+   which never appear on a projected wall display. */
+.sa-cap {
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: var(--sa-text-4);
+  white-space: nowrap;
+}
+/* Pin toggle: a dim line-icon while auto-rotating, lit gold once the view is
+   held. Low profile — no chrome, state reads purely from colour + a soft glow. */
+.sa-pin {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 7px;
+  color: var(--sa-text-5);
+  transition: color 0.25s, background 0.25s, filter 0.25s;
+}
+.sa-pin:hover {
+  color: var(--sa-text-3);
+  background: rgba(var(--sa-cyan-rgb), 0.06);
+}
+.sa-pin-on {
+  color: var(--sa-gold);
+  filter: drop-shadow(0 0 5px rgba(var(--sa-gold-rgb), 0.5));
+}
+.sa-pin-on:hover {
+  color: var(--sa-gold);
+  background: rgba(var(--sa-gold-rgb), 0.1);
+}
+.sa-pin:focus-visible {
   outline: 2px solid rgba(207, 227, 255, 0.6);
   outline-offset: 2px;
 }
