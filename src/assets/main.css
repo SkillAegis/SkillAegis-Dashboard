@@ -38,3 +38,20 @@
 *:hover::-webkit-scrollbar-thumb {
     @apply bg-slate-500;
 }
+
+/* Accessibility: honor the OS "reduce motion" setting. Neutralizes looping
+   animations and transitions app-wide (login, modals, and every dashboard
+   flourish) while preserving instant state changes — rows still re-sort, +N
+   still appears, one-shot reveals (e.g. CompletionBurst) resolve immediately.
+   !important is required because several dashboard animations are applied via
+   inline style, which only loses to !important. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
