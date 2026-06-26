@@ -37,6 +37,7 @@ const ROT_MS = 4500 // champion sub-list pages rotate this often
 const CHAMPION_PAGE = 4 // entries per champion sub-list page
 const JUST_SCORED_MS = 1700 // how long the "+N" score pop stays visible
 const BURST_MS = 1600 // how long the all-clear completion burst plays on a row
+const RECENT_LIMIT = 5 // rows in the "Just Cleared" scene (1 leader + 4 rest)
 
 export { ROW_HEIGHT }
 
@@ -153,6 +154,18 @@ function fmtDur(ms) {
   const ss = s % 60
   const p = (x) => String(x).padStart(2, '0')
   return (h ? p(h) + ':' : '') + p(m) + ':' + p(ss)
+}
+
+// Single-unit "time ago" for a recent event: "12s" / "3m" / "1h" / "2d".
+// Counts up live against the shared `now` clock — no new data needed.
+function fmtAgo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
 }
 
 // Compact clock for an accumulated duration in seconds: "M:SS"
@@ -499,9 +512,44 @@ export const finishers = computed(() => {
   })
 })
 
-// On Fire / Speed / Trophies, plus a fourth Finishers scene once at least one
-// participant has cleared everything. Drives the champion slot's rotation.
-export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
+/* ------------------------------------------------------------------ */
+/* Recent completions ("Just Cleared" — what just got finished)        */
+/* ------------------------------------------------------------------ */
+// Every completed task across all participants for the selected exercise,
+// newest first. Timestamps only (no `now`), so it recomputes on progress
+// changes, not every tick; the "ago" label is formatted later against `now`.
+export const recentCompletions = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return []
+  const taskName = {}
+  for (const t of ex.tasks) taskName[t.uuid] = t.name
+
+  const items = []
+  for (const p of Object.values(progresses.value)) {
+    const tc = p.exercises?.[ex.uuid]?.tasks_completion
+    if (!tc) continue
+    for (const [taskUuid, c] of Object.entries(tc)) {
+      if (!c || c === false || !c.timestamp) continue
+      items.push({ user_id: p.user_id, email: p.email, taskUuid, at: c.timestamp * 1000 })
+    }
+  }
+  items.sort((a, b) => b.at - a.at)
+  return items.slice(0, RECENT_LIMIT).map((it) => {
+    const { name, org } = splitEmail(it.email)
+    return {
+      id: `${it.user_id}|${it.taskUuid}`,
+      taskName: taskName[it.taskUuid] || '—',
+      name,
+      org,
+      at: it.at,
+    }
+  })
+})
+
+// On Fire / Speed / Trophies / Just Cleared are always in rotation; a fifth
+// Finishers scene appears once at least one participant has cleared everything.
+// Drives the champion slot's rotation.
+export const sceneCount = computed(() => (finishers.value.length ? 5 : 4))
 
 /* ------------------------------------------------------------------ */
 /* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
@@ -686,12 +734,19 @@ export const champions = computed(() => {
 
   const finishersList = finishers.value
 
+  // Just Cleared — newest completions, "ago" stamped against the shared clock.
+  const recent = recentCompletions.value
+  const stampAgo = (it) => ({ ...it, ago: fmtAgo(now.value - it.at) })
+  const historyLeader = recent[0] ? stampAgo(recent[0]) : null
+  const historyRest = recent.slice(1, RECENT_LIMIT).map(stampAgo)
+
   return {
     scene,
     showFire: scene === 0,
     showSpeed: scene === 1,
     showTrophies: scene === 2,
-    showFinishers: scene === 3,
+    showHistory: scene === 3,
+    showFinishers: scene === 4,
     sceneDots: Array.from({ length: scenes }, (_, i) => ({
       bg: i === scene ? 'var(--sa-text-2)' : 'rgba(120,140,170,.3)',
       w: i === scene ? 18 : 6,
@@ -703,7 +758,9 @@ export const champions = computed(() => {
           ? 'rgba(var(--sa-cyan-rgb),.32)'
           : scene === 2
             ? 'rgba(var(--sa-gold-rgb),.26)'
-            : 'rgba(var(--sa-mint-rgb),.34)',
+            : scene === 3
+              ? 'rgba(var(--sa-violet-rgb),.32)'
+              : 'rgba(var(--sa-mint-rgb),.34)',
     slotBg:
       scene === 0
         ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(var(--sa-bg-deep-rgb),.9))'
@@ -711,12 +768,16 @@ export const champions = computed(() => {
           ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
           : scene === 2
             ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(var(--sa-bg-deep-rgb),.9))'
-            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
+            : scene === 3
+              ? 'linear-gradient(150deg,rgba(30,20,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
+              : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
     fireLeader,
     fireRest,
     speedLeader,
     speedRest,
     trophies,
+    historyLeader,
+    historyRest,
     finishersCount: finishersList.length,
     finishersLeader: finishersList[0] || null,
     finishersRest: finishersList.slice(1, 5),

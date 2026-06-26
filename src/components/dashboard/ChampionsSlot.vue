@@ -140,6 +140,38 @@ function cycle() {
       </div>
     </div>
 
+    <!-- JUST CLEARED (most recently completed tasks, newest first) -->
+    <div v-if="champions.showHistory" class="sa-rise">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:15px;filter:drop-shadow(0 0 6px rgba(var(--sa-violet-rgb),.7));">🕒</span>
+        <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#cbb8ff;">JUST CLEARED</span>
+        <span class="sa-mono sa-cap">· tasks completed, newest first</span>
+      </div>
+
+      <div v-if="!champions.historyLeader" class="sa-mono" style="color:#6b7a93;font-size:12px;text-align:center;padding:18px 0;">No completions yet</div>
+
+      <template v-else>
+        <!-- most recent completion -->
+        <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+          <span style="font-size:20px;flex:none;line-height:1;filter:drop-shadow(0 0 8px rgba(var(--sa-violet-rgb),.85));">🕒</span>
+          <span style="font-size:20px;font-weight:700;color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:none;max-width:210px;">{{ champions.historyLeader.name }}</span>
+          <span style="font-size:14px;color:#b6a4dd;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ champions.historyLeader.taskName }}</span>
+          <span class="sa-mono" style="font-size:16px;font-weight:800;flex:none;color:var(--sa-violet);" title="Time since completion">{{ champions.historyLeader.ago }}</span>
+        </div>
+        <div style="margin-top:6px;height:6px;border-radius:4px;background:linear-gradient(90deg,var(--sa-violet),rgba(var(--sa-violet-rgb),.12));box-shadow:0 0 10px rgba(var(--sa-violet-rgb),.45);"></div>
+
+        <!-- earlier completions -->
+        <div style="margin-top:9px;padding-right:14px;display:flex;flex-direction:column;gap:6px;">
+          <div v-for="h in champions.historyRest" :key="h.id" style="display:flex;align-items:center;gap:9px;">
+            <span style="flex:none;width:14px;display:flex;justify-content:center;"><span style="width:5px;height:5px;border-radius:50%;background:var(--sa-violet);box-shadow:0 0 6px rgba(var(--sa-violet-rgb),.6);"></span></span>
+            <span style="font-size:13px;color:#d8d0ea;flex:none;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ h.name }}</span>
+            <span style="font-size:13px;color:#9d8fc4;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ h.taskName }}</span>
+            <span class="sa-mono" style="font-size:11px;flex:none;color:#b9a6e6;" title="Time since completion">{{ h.ago }}</span>
+          </div>
+        </div>
+      </template>
+    </div>
+
     <!-- FINISHERS (only present once someone has cleared every task) -->
     <div v-if="champions.showFinishers" class="sa-rise">
       <div style="display:flex;align-items:center;gap:8px;">
