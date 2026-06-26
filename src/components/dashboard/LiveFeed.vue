@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
-import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl } from './dashboardState.js'
+import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared } from './dashboardState.js'
 
 // Animate the activity timeline as a horizontal slide rather than per-bar height
 // growth. Each update shifts the series one bucket left, so we render the new
@@ -38,6 +38,25 @@ watch(
       <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:8px;background:rgba(var(--sa-mint-rgb),.1);border:1px solid rgba(var(--sa-mint-rgb),.2);">
         <span style="font-size:11px;">🔒</span><span class="sa-mono" style="font-size:10px;color:var(--sa-text-4);">API</span>
         <span class="sa-mono" style="font-size:14px;font-weight:800;color:var(--sa-mint);">{{ apiMessages }}</span>
+      </div>
+    </div>
+
+    <!-- Just Cleared — task completions pinned above the raw stream: the
+         curated "what just happened" companion to the HTTP feed below. -->
+    <div style="padding:10px 16px 9px;border-bottom:1px solid rgba(var(--sa-violet-rgb),.16);background:rgba(var(--sa-violet-rgb),.045);">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+        <span style="font-size:13px;filter:drop-shadow(0 0 5px rgba(var(--sa-violet-rgb),.7));">🕒</span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#cbb8ff;">JUST CLEARED</span>
+        <span class="sa-mono" style="font-size:10px;color:var(--sa-text-5);">· tasks completed, newest first</span>
+      </div>
+      <div v-if="justCleared.length === 0" class="sa-mono" style="font-size:11px;color:var(--sa-text-6);padding:3px 0 2px;">No completions yet</div>
+      <div v-else style="display:flex;flex-direction:column;gap:4px;">
+        <div v-for="c in justCleared" :key="c.id" class="sa-rise" style="display:flex;align-items:center;gap:9px;">
+          <span style="flex:none;width:6px;height:6px;border-radius:50%;" :style="{ background: c.top ? 'var(--sa-violet)' : 'rgba(var(--sa-violet-rgb),.4)', boxShadow: c.top ? '0 0 6px rgba(var(--sa-violet-rgb),.7)' : 'none' }"></span>
+          <span style="font-size:12px;font-weight:600;flex:none;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#fff' : '#d8d0ea' }">{{ c.name }}</span>
+          <span style="font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#c5b3ee' : '#9d8fc4' }">{{ c.taskName }}</span>
+          <span class="sa-mono" style="font-size:11px;font-weight:700;flex:none;" :style="{ color: c.top ? 'var(--sa-violet)' : '#b9a6e6' }" title="Time since completion">{{ c.ago }}</span>
+        </div>
       </div>
     </div>
 

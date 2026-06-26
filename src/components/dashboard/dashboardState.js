@@ -37,7 +37,7 @@ const ROT_MS = 4500 // champion sub-list pages rotate this often
 const CHAMPION_PAGE = 4 // entries per champion sub-list page
 const JUST_SCORED_MS = 1700 // how long the "+N" score pop stays visible
 const BURST_MS = 1600 // how long the all-clear completion burst plays on a row
-const RECENT_LIMIT = 5 // rows in the "Just Cleared" scene (1 leader + 4 rest)
+const RECENT_LIMIT = 5 // rows in the "Just Cleared" strip pinned atop the feed
 
 export { ROW_HEIGHT }
 
@@ -517,8 +517,8 @@ export const finishers = computed(() => {
 /* ------------------------------------------------------------------ */
 // Every completed task across all participants for the selected exercise,
 // newest first. Timestamps only (no `now`), so it recomputes on progress
-// changes, not every tick; the "ago" label is formatted later against `now`.
-export const recentCompletions = computed(() => {
+// changes, not every tick; the "ago" label is stamped on top against `now`.
+const recentCompletions = computed(() => {
   const ex = selectedExercise.value
   if (!ex) return []
   const taskName = {}
@@ -546,10 +546,24 @@ export const recentCompletions = computed(() => {
   })
 })
 
-// On Fire / Speed / Trophies / Just Cleared are always in rotation; a fifth
-// Finishers scene appears once at least one participant has cleared everything.
-// Drives the champion slot's rotation.
-export const sceneCount = computed(() => (finishers.value.length ? 5 : 4))
+// Render-ready rows for the "Just Cleared" strip pinned atop the Live Feed:
+// recentCompletions with a live "ago" stamped against the shared clock, the
+// most recent flagged `top` for a subtle emphasis. Lives beside the raw feed
+// (not in the champion rotation) so "what just happened" is always on screen.
+export const justCleared = computed(() => {
+  const nowMs = now.value
+  return recentCompletions.value.map((it, i) => ({
+    id: it.id,
+    name: it.name,
+    taskName: it.taskName,
+    ago: fmtAgo(nowMs - it.at),
+    top: i === 0,
+  }))
+})
+
+// On Fire / Speed / Trophies, plus a fourth Finishers scene once at least one
+// participant has cleared everything. Drives the champion slot's rotation.
+export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
 
 /* ------------------------------------------------------------------ */
 /* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
@@ -734,19 +748,12 @@ export const champions = computed(() => {
 
   const finishersList = finishers.value
 
-  // Just Cleared — newest completions, "ago" stamped against the shared clock.
-  const recent = recentCompletions.value
-  const stampAgo = (it) => ({ ...it, ago: fmtAgo(now.value - it.at) })
-  const historyLeader = recent[0] ? stampAgo(recent[0]) : null
-  const historyRest = recent.slice(1, RECENT_LIMIT).map(stampAgo)
-
   return {
     scene,
     showFire: scene === 0,
     showSpeed: scene === 1,
     showTrophies: scene === 2,
-    showHistory: scene === 3,
-    showFinishers: scene === 4,
+    showFinishers: scene === 3,
     sceneDots: Array.from({ length: scenes }, (_, i) => ({
       bg: i === scene ? 'var(--sa-text-2)' : 'rgba(120,140,170,.3)',
       w: i === scene ? 18 : 6,
@@ -758,9 +765,7 @@ export const champions = computed(() => {
           ? 'rgba(var(--sa-cyan-rgb),.32)'
           : scene === 2
             ? 'rgba(var(--sa-gold-rgb),.26)'
-            : scene === 3
-              ? 'rgba(var(--sa-violet-rgb),.32)'
-              : 'rgba(var(--sa-mint-rgb),.34)',
+            : 'rgba(var(--sa-mint-rgb),.34)',
     slotBg:
       scene === 0
         ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(var(--sa-bg-deep-rgb),.9))'
@@ -768,16 +773,12 @@ export const champions = computed(() => {
           ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
           : scene === 2
             ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(var(--sa-bg-deep-rgb),.9))'
-            : scene === 3
-              ? 'linear-gradient(150deg,rgba(30,20,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
-              : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
+            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
     fireLeader,
     fireRest,
     speedLeader,
     speedRest,
     trophies,
-    historyLeader,
-    historyRest,
     finishersCount: finishersList.length,
     finishersLeader: finishersList[0] || null,
     finishersRest: finishersList.slice(1, 5),
