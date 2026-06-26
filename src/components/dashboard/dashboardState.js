@@ -8,6 +8,9 @@
  *
  * It mirrors the pattern used by `socket.js`: a module-level singleton of
  * reactive state and `computed` view-models that components import directly.
+ *
+ * Color strings reference the .sa-root token layer (see CLAUDE.md → Conventions)
+ * via `var(...)`, which resolves fine inside the inline styles these feed.
  */
 import { ref, reactive, computed, watch } from 'vue'
 import {
@@ -119,18 +122,16 @@ function splitEmail(email) {
 }
 
 function heatColor(v) {
-  if (v <= 0) return 'rgba(56,210,255,.07)'
-  if (v <= 1) return 'rgba(56,210,255,.28)'
-  if (v <= 2) return 'rgba(56,210,255,.55)'
-  return '#36d2ff'
+  if (v <= 0) return 'rgba(var(--sa-cyan-rgb),.07)'
+  if (v <= 1) return 'rgba(var(--sa-cyan-rgb),.28)'
+  if (v <= 2) return 'rgba(var(--sa-cyan-rgb),.55)'
+  return 'var(--sa-cyan)'
 }
 
-function tint(hex, a) {
-  const h = hex.replace('#', '')
-  const r = parseInt(h.slice(0, 2), 16)
-  const g = parseInt(h.slice(2, 4), 16)
-  const b = parseInt(h.slice(4, 6), 16)
-  return `rgba(${r},${g},${b},${a})`
+// Build an rgba() string from a `--x-rgb` channel-triple token and an alpha,
+// e.g. alpha('var(--sa-gold-rgb)', 0.13) → "rgba(var(--sa-gold-rgb), 0.13)".
+function alpha(rgbVar, a) {
+  return `rgba(${rgbVar}, ${a})`
 }
 
 function fmtDur(ms) {
@@ -212,7 +213,7 @@ watch(
 /* ------------------------------------------------------------------ */
 /* Leaderboard rows                                                   */
 /* ------------------------------------------------------------------ */
-const MEDALS = ['#ffcd5b', '#c7d3e6', '#e09b62']
+const MEDALS = ['var(--sa-gold)', '#c7d3e6', '#e09b62']
 
 export const players = computed(() => {
   const ex = selectedExercise.value
@@ -260,12 +261,12 @@ export const players = computed(() => {
           done: isDone,
           avail,
           bg: isDone
-            ? 'linear-gradient(180deg,#36d2ff,#5be39a)'
+            ? 'linear-gradient(180deg,var(--sa-cyan),var(--sa-mint))'
             : avail
-              ? 'rgba(56,210,255,.12)'
-              : 'rgba(56,210,255,.04)',
-          border: isDone ? 'transparent' : avail ? '#36d2ff' : 'rgba(110,130,160,.28)',
-          glow: avail ? '0 0 7px rgba(54,210,255,.45)' : 'none',
+              ? 'rgba(var(--sa-cyan-rgb),.12)'
+              : 'rgba(var(--sa-cyan-rgb),.04)',
+          border: isDone ? 'transparent' : avail ? 'var(--sa-cyan)' : 'rgba(110,130,160,.28)',
+          glow: avail ? '0 0 7px rgba(var(--sa-cyan-rgb),.45)' : 'none',
         }
       })
 
@@ -315,39 +316,39 @@ export const players = computed(() => {
       scoreColor: done100
         ? '#ffd970'
         : onFire
-          ? '#ff8a3c'
+          ? 'var(--sa-fire-mid)'
           : just
-            ? '#5be39a'
+            ? 'var(--sa-mint)'
             : top
-              ? '#ffcd5b'
+              ? 'var(--sa-gold)'
               : r.score === 0
-                ? '#46607f'
-                : '#cfe3ff',
-      rankFg: top ? '#0a1322' : '#7e98ba',
-      rankBg: top ? MEDALS[rank] : 'rgba(56,210,255,.08)',
-      rankBorder: top ? 'transparent' : 'rgba(56,210,255,.18)',
+                ? 'var(--sa-text-6)'
+                : 'var(--sa-text-2)',
+      rankFg: top ? 'var(--sa-ink)' : 'var(--sa-text-4)',
+      rankBg: top ? MEDALS[rank] : 'rgba(var(--sa-cyan-rgb),.08)',
+      rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
       rowBg: done100
-        ? 'linear-gradient(90deg,rgba(91,227,154,.12),rgba(255,205,91,.07))'
+        ? 'linear-gradient(90deg,rgba(var(--sa-mint-rgb),.12),rgba(var(--sa-gold-rgb),.07))'
         : onFire
-          ? 'rgba(255,120,60,.09)'
+          ? 'rgba(var(--sa-fire-rgb),.09)'
           : just
-            ? 'rgba(91,227,154,.10)'
+            ? 'rgba(var(--sa-mint-rgb),.10)'
             : top
-              ? 'rgba(255,205,91,.06)'
-              : 'rgba(56,210,255,.03)',
+              ? 'rgba(var(--sa-gold-rgb),.06)'
+              : 'rgba(var(--sa-cyan-rgb),.03)',
       rowBorder: done100
-        ? 'rgba(255,205,91,.5)'
+        ? 'rgba(var(--sa-gold-rgb),.5)'
         : onFire
-          ? 'rgba(255,140,70,.4)'
+          ? 'rgba(var(--sa-fire-bright-rgb),.4)'
           : top
-            ? 'rgba(255,205,91,.22)'
-            : 'rgba(56,210,255,.08)',
+            ? 'rgba(var(--sa-gold-rgb),.22)'
+            : 'rgba(var(--sa-cyan-rgb),.08)',
       glow: done100
-        ? '0 0 0 1px rgba(255,205,91,.4),0 0 24px rgba(91,227,154,.22)'
+        ? '0 0 0 1px rgba(var(--sa-gold-rgb),.4),0 0 24px rgba(var(--sa-mint-rgb),.22)'
         : onFire
-          ? '0 0 0 1px rgba(255,140,70,.5),0 0 28px rgba(255,120,60,.3)'
+          ? '0 0 0 1px rgba(var(--sa-fire-bright-rgb),.5),0 0 28px rgba(var(--sa-fire-rgb),.3)'
           : just
-            ? '0 0 0 1px rgba(91,227,154,.6),0 0 26px rgba(91,227,154,.28)'
+            ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
             : 'none',
       rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
     }
@@ -426,7 +427,7 @@ export const podium = computed(() => {
         initials: digits ? digits.padStart(2, '0') : name.slice(0, 2).toUpperCase(),
         first,
         medal: MEDALS[r],
-        glow: first ? 'rgba(255,205,91,.6)' : 'rgba(199,211,230,.3)',
+        glow: first ? 'rgba(var(--sa-gold-rgb),.6)' : 'rgba(199,211,230,.3)',
         scoreColor: MEDALS[r],
         badge: first ? 60 : 42,
         nameSize: first ? 19 : 14,
@@ -434,7 +435,7 @@ export const podium = computed(() => {
         badgeAnim: first ? 'sa-gold 2s ease-in-out infinite' : 'sa-pop .5s ease',
         barH: first ? 74 : r === 1 ? 48 : 34,
         barBg: first
-          ? 'linear-gradient(180deg,#ffcd5b,rgba(255,205,91,.06))'
+          ? 'linear-gradient(180deg,var(--sa-gold),rgba(var(--sa-gold-rgb),.06))'
           : `linear-gradient(180deg,${MEDALS[r]},rgba(199,211,230,.04))`,
       }
     })
@@ -481,7 +482,7 @@ export const finishers = computed(() => {
       org,
       rank: i + 1,
       first: i === 0,
-      medal: MEDALS[i] || '#9fb4d0',
+      medal: MEDALS[i] || 'var(--sa-text-3)',
       clear: d.finishedAt ? fmtDur(d.finishedAt - start) : '—',
     }
   })
@@ -513,10 +514,10 @@ function buildCard(ranked, fmt, fracOf) {
 }
 
 const TROPHY_GLYPHS = {
-  grinder: { icon: '⛏', c: '#ffcd5b' },
-  'bounce-back': { icon: '↺', c: '#5be39a' },
-  messenger: { icon: '✉', c: '#36d2ff' },
-  spammer: { icon: '◎', c: '#b08bff' },
+  grinder: { icon: '⛏', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' },
+  'bounce-back': { icon: '↺', c: 'var(--sa-mint)', rgb: 'var(--sa-mint-rgb)' },
+  messenger: { icon: '✉', c: 'var(--sa-cyan)', rgb: 'var(--sa-cyan-rgb)' },
+  spammer: { icon: '◎', c: 'var(--sa-violet)', rgb: 'var(--sa-violet-rgb)' },
 }
 
 const DEFAULT_FIRE_WINDOW_SEC = 240
@@ -527,25 +528,25 @@ const FIRE_TIERS = [
   {
     min: 0.75,
     label: 'INFERNO',
-    fg: '#ffe08a',
-    bar: 'linear-gradient(90deg,#ff5d3c,#ffb24a 55%,#fff6d8)',
-    glow: '0 0 16px rgba(255,93,60,.85)',
+    fg: 'var(--sa-gold-bright)',
+    bar: 'linear-gradient(90deg,var(--sa-fire-deep),#ffb24a 55%,#fff6d8)',
+    glow: '0 0 16px rgba(var(--sa-fire-deep-rgb),.85)',
     flameAnim: 'sa-flame .45s infinite',
   },
   {
     min: 0.5,
     label: 'BLAZING',
     fg: '#ff9a5c',
-    bar: 'linear-gradient(90deg,#ff7a3c,#ff5d3c)',
-    glow: '0 0 12px rgba(255,93,60,.6)',
+    bar: 'linear-gradient(90deg,#ff7a3c,var(--sa-fire-deep))',
+    glow: '0 0 12px rgba(var(--sa-fire-deep-rgb),.6)',
     flameAnim: 'sa-flame .75s infinite',
   },
   {
     min: 0.25,
     label: 'HOT',
-    fg: '#ff8a3c',
-    bar: 'linear-gradient(90deg,rgba(255,138,60,.55),#ff8a3c)',
-    glow: '0 0 8px rgba(255,138,60,.5)',
+    fg: 'var(--sa-fire-mid)',
+    bar: 'linear-gradient(90deg,rgba(var(--sa-fire-mid-rgb),.55),var(--sa-fire-mid))',
+    glow: '0 0 8px rgba(var(--sa-fire-mid-rgb),.5)',
     flameAnim: 'sa-flame 1.1s infinite',
   },
   {
@@ -588,9 +589,9 @@ const SPEED_TIERS = [
   {
     min: 0.25,
     label: 'BRISK',
-    fg: '#36d2ff',
-    seg: '#36d2ff',
-    glow: '0 0 5px rgba(54,210,255,.5)',
+    fg: 'var(--sa-cyan)',
+    seg: 'var(--sa-cyan)',
+    glow: '0 0 5px rgba(var(--sa-cyan-rgb),.5)',
     boltAnim: 'sa-bolt 1.2s infinite',
   },
   {
@@ -657,7 +658,7 @@ export const champions = computed(() => {
   // Trophies — up to 4 holders
   const trophyObj = userStats.value?.trophies || {}
   const trophies = Object.entries(trophyObj).map(([id, t]) => {
-    const glyph = TROPHY_GLYPHS[id] || { icon: '🏆', c: '#ffcd5b' }
+    const glyph = TROPHY_GLYPHS[id] || { icon: '🏆', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' }
     const winners = (t.users || []).map((u) => splitEmail(u.email).name)
     const holder =
       winners.length === 0 ? '—' : winners.length <= 2 ? winners.join(', ') : `${winners[0]} +${winners.length - 1}`
@@ -666,8 +667,8 @@ export const champions = computed(() => {
       name: t.metadata?.name || id,
       icon: glyph.icon,
       fg: glyph.c,
-      bg: tint(glyph.c, 0.13),
-      border: tint(glyph.c, 0.4),
+      bg: alpha(glyph.rgb, 0.13),
+      border: alpha(glyph.rgb, 0.4),
       holder,
     }
   })
@@ -681,25 +682,25 @@ export const champions = computed(() => {
     showTrophies: scene === 2,
     showFinishers: scene === 3,
     sceneDots: Array.from({ length: scenes }, (_, i) => ({
-      bg: i === scene ? '#cfe3ff' : 'rgba(120,140,170,.3)',
+      bg: i === scene ? 'var(--sa-text-2)' : 'rgba(120,140,170,.3)',
       w: i === scene ? 18 : 6,
     })),
     slotBorder:
       scene === 0
-        ? 'rgba(255,140,70,.32)'
+        ? 'rgba(var(--sa-fire-bright-rgb),.32)'
         : scene === 1
-          ? 'rgba(54,210,255,.32)'
+          ? 'rgba(var(--sa-cyan-rgb),.32)'
           : scene === 2
-            ? 'rgba(255,205,91,.26)'
-            : 'rgba(91,227,154,.34)',
+            ? 'rgba(var(--sa-gold-rgb),.26)'
+            : 'rgba(var(--sa-mint-rgb),.34)',
     slotBg:
       scene === 0
-        ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(14,18,30,.9))'
+        ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(var(--sa-bg-deep-rgb),.9))'
         : scene === 1
-          ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(14,18,30,.9))'
+          ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
           : scene === 2
-            ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(14,18,30,.9))'
-            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(14,18,30,.9))',
+            ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(var(--sa-bg-deep-rgb),.9))'
+            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
     fireLeader,
     fireRest,
     speedLeader,
@@ -715,10 +716,10 @@ export const champions = computed(() => {
 /* Live feed                                                          */
 /* ------------------------------------------------------------------ */
 function methodStyle(m) {
-  if (m === 'GET') return ['#36d2ff', 'rgba(54,210,255,.16)']
-  if (m === 'POST') return ['#5be39a', 'rgba(91,227,154,.16)']
-  if (m === 'DELETE') return ['#ff6b6b', 'rgba(255,107,107,.16)']
-  return ['#ffcd5b', 'rgba(255,205,91,.16)'] // PUT / other
+  if (m === 'GET') return ['var(--sa-cyan)', 'rgba(var(--sa-cyan-rgb),.16)']
+  if (m === 'POST') return ['var(--sa-mint)', 'rgba(var(--sa-mint-rgb),.16)']
+  if (m === 'DELETE') return ['var(--sa-danger)', 'rgba(var(--sa-danger-rgb),.16)']
+  return ['var(--sa-gold)', 'rgba(var(--sa-gold-rgb),.16)'] // PUT / other
 }
 
 function isDisplayablePayload(payload) {
@@ -769,11 +770,11 @@ export const feed = computed(() => {
       id: e.id,
       user: name,
       method,
-      methodFg: isWebhook ? '#b08bff' : fg,
-      methodBg: isWebhook ? 'rgba(176,139,255,.16)' : bg,
+      methodFg: isWebhook ? 'var(--sa-violet)' : fg,
+      methodBg: isWebhook ? 'rgba(var(--sa-violet-rgb),.16)' : bg,
       url: isWebhook ? e.target_tool : e.url,
-      rowBg: i === 0 ? 'rgba(54,210,255,.06)' : 'rgba(56,210,255,.02)',
-      rowBorder: i === 0 ? 'rgba(54,210,255,.18)' : 'rgba(56,210,255,.06)',
+      rowBg: i === 0 ? 'rgba(var(--sa-cyan-rgb),.06)' : 'rgba(var(--sa-cyan-rgb),.02)',
+      rowBorder: i === 0 ? 'rgba(var(--sa-cyan-rgb),.18)' : 'rgba(var(--sa-cyan-rgb),.06)',
       hasPayload,
       keyCount: pl.keyCount,
       payloadLines: pl.lines,
@@ -795,7 +796,7 @@ export const timeline = computed(() => {
   const tlMax = Math.max(1, ...buckets)
   const bars = buckets.map((v, i) => ({
     h: Math.round((v / tlMax) * 100),
-    bg: i === buckets.length - 1 ? '#36d2ff' : v === 0 ? 'rgba(56,210,255,.08)' : 'rgba(54,210,255,.45)',
+    bg: i === buckets.length - 1 ? 'var(--sa-cyan)' : v === 0 ? 'rgba(var(--sa-cyan-rgb),.08)' : 'rgba(var(--sa-cyan-rgb),.45)',
   }))
   return {
     bars,
