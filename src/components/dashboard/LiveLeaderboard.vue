@@ -87,25 +87,25 @@ onUnmounted(() => {
 <template>
   <section class="sa-board" data-sa-leaderboard>
     <div style="display:flex;align-items:center;gap:12px;padding:11px 22px 9px;">
-      <span style="font-size:17px;font-weight:700;letter-spacing:2px;color:#eaf3ff;">LIVE LEADERBOARD</span>
-      <span class="sa-mono" style="font-size:12px;color:#5f86b0;letter-spacing:1px;">{{ sortLabel }}</span>
+      <span style="font-size:17px;font-weight:700;letter-spacing:2px;color:var(--sa-text-1);">LIVE LEADERBOARD</span>
+      <span class="sa-mono" style="font-size:12px;color:var(--sa-text-5);letter-spacing:1px;">{{ sortLabel }}</span>
     </div>
 
     <!-- column headers -->
-    <div style="display:flex;align-items:flex-end;gap:14px;padding:0 22px 9px;border-bottom:1px solid rgba(56,210,255,.1);">
-      <div class="sa-mono" style="width:46px;text-align:center;font-size:11px;color:#46607f;">#</div>
-      <div class="sa-mono" style="width:236px;font-size:11px;letter-spacing:1px;color:#46607f;">PARTICIPANT · ACTIVITY</div>
+    <div style="display:flex;align-items:flex-end;gap:14px;padding:0 22px 9px;border-bottom:1px solid rgba(var(--sa-cyan-rgb),.1);">
+      <div class="sa-mono" style="width:46px;text-align:center;font-size:11px;color:var(--sa-text-6);">#</div>
+      <div class="sa-mono" style="width:236px;font-size:11px;letter-spacing:1px;color:var(--sa-text-6);">PARTICIPANT · ACTIVITY</div>
       <div style="flex:1;display:flex;gap:6px;">
         <div
           v-for="(t, i) in taskLabels"
           :key="i"
           class="sa-mono"
-          style="flex:1;text-align:center;font-size:10px;line-height:1.15;color:#46607f;letter-spacing:.3px;height:26px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;"
+          style="flex:1;text-align:center;font-size:10px;line-height:1.15;color:var(--sa-text-6);letter-spacing:.3px;height:26px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;"
           :title="t"
         >{{ t }}</div>
       </div>
-      <div class="sa-mono" style="width:150px;text-align:center;font-size:11px;color:#46607f;letter-spacing:1px;">PROGRESS</div>
-      <div class="sa-mono" style="width:78px;text-align:right;font-size:11px;color:#46607f;letter-spacing:1px;">SCORE</div>
+      <div class="sa-mono" style="width:150px;text-align:center;font-size:11px;color:var(--sa-text-6);letter-spacing:1px;">PROGRESS</div>
+      <div class="sa-mono" style="width:78px;text-align:right;font-size:11px;color:var(--sa-text-6);letter-spacing:1px;">SCORE</div>
     </div>
 
     <!-- rows -->
@@ -161,14 +161,14 @@ onUnmounted(() => {
             <div style="width:236px;display:flex;flex-direction:column;gap:3px;min-width:0;">
               <div style="display:flex;align-items:center;gap:7px;min-width:0;">
                 <span v-if="p.complete" class="sa-medal" title="Cleared every task">🏅</span>
-                <span v-if="p.isFire" class="sa-flame" style="font-size:15px;line-height:1;filter:drop-shadow(0 0 5px rgba(255,120,60,.8));">🔥</span>
+                <span v-if="p.isFire" class="sa-flame" style="font-size:15px;line-height:1;filter:drop-shadow(0 0 5px rgba(var(--sa-fire-rgb),.8));">🔥</span>
                 <div style="min-width:0;flex:1;">
-                  <div style="font-weight:600;font-size:15px;color:#eaf3ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;">{{ p.name }}</div>
-                  <div class="sa-mono" style="font-size:9px;color:#5f86b0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.org }}</div>
+                  <div style="font-weight:600;font-size:15px;color:var(--sa-text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;">{{ p.name }}</div>
+                  <div class="sa-mono" style="font-size:9px;color:var(--sa-text-5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.org }}</div>
                 </div>
               </div>
-              <div v-if="p.isFire" style="height:4px;border-radius:3px;background:rgba(255,120,60,.16);overflow:hidden;margin:0 16px 0 0;">
-                <div :style="{ height: '100%', width: p.fireBarPct + '%', borderRadius: '3px', background: 'linear-gradient(90deg,#ffb24a,#ff5d3c)', transition: 'width 1s linear', boxShadow: '0 0 8px rgba(255,120,60,.7)' }"></div>
+              <div v-if="p.isFire" style="height:4px;border-radius:3px;background:rgba(var(--sa-fire-rgb),.16);overflow:hidden;margin:0 16px 0 0;">
+                <div :style="{ height: '100%', width: p.fireBarPct + '%', borderRadius: '3px', background: 'linear-gradient(90deg,#ffb24a,var(--sa-fire-deep))', transition: 'width 1s linear', boxShadow: '0 0 8px rgba(var(--sa-fire-rgb),.7)' }"></div>
               </div>
               <div style="display:flex;gap:2px;height:8px;padding:0 16px 0 2px;">
                 <div v-for="(c, ci) in p.heat" :key="ci" :style="{ flex: '1', borderRadius: '2px', background: c.bg }"></div>
@@ -178,7 +178,7 @@ onUnmounted(() => {
             <!-- task strip: fuses into one bar once every task is cleared, but
                  admins keep the clickable per-task squares to toggle completion -->
             <div style="flex:1;display:flex;align-items:stretch;height:24px;">
-              <div v-if="p.complete && !userAuthenticated" class="sa-clearbar" style="flex:1;position:relative;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,#5be39a,#36d2ff 55%,#ffcd5b);box-shadow:0 0 12px rgba(91,227,154,.4);">
+              <div v-if="p.complete && !userAuthenticated" class="sa-clearbar" style="flex:1;position:relative;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,var(--sa-mint),var(--sa-cyan) 55%,var(--sa-gold));box-shadow:0 0 12px rgba(var(--sa-mint-rgb),.4);">
                 <span class="sa-clearbar-shine"></span>
               </div>
               <div v-else style="flex:1;display:flex;gap:5px;align-items:stretch;">
@@ -192,7 +192,7 @@ onUnmounted(() => {
                   :style="{ background: t.bg, border: `1px solid ${t.border}`, boxShadow: t.glow }"
                   @click="toggleTask(p, t)"
                 >
-                  <span v-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:#36d2ff;"></span>
+                  <span v-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--sa-cyan);"></span>
                 </div>
               </div>
             </div>
@@ -201,17 +201,17 @@ onUnmounted(() => {
             <div style="width:150px;display:flex;align-items:center;gap:9px;">
               <div v-if="p.complete" class="sa-cleared-pill sa-mono">✓ CLEARED</div>
               <template v-else>
-                <div style="flex:1;height:9px;border-radius:6px;background:rgba(56,210,255,.1);overflow:hidden;position:relative;">
-                  <div :style="{ height: '100%', width: p.barPct + '%', borderRadius: '6px', background: 'linear-gradient(90deg,#2b7bd6,#36d2ff,#5be39a)', transition: 'width .85s ease', boxShadow: '0 0 12px rgba(54,210,255,.45)' }"></div>
+                <div style="flex:1;height:9px;border-radius:6px;background:rgba(var(--sa-cyan-rgb),.1);overflow:hidden;position:relative;">
+                  <div :style="{ height: '100%', width: p.barPct + '%', borderRadius: '6px', background: 'linear-gradient(90deg,#2b7bd6,var(--sa-cyan),var(--sa-mint))', transition: 'width .85s ease', boxShadow: '0 0 12px rgba(var(--sa-cyan-rgb),.45)' }"></div>
                 </div>
-                <span class="sa-mono" style="font-size:11px;color:#7e98ba;width:34px;">{{ p.doneLabel }}</span>
+                <span class="sa-mono" style="font-size:11px;color:var(--sa-text-4);width:34px;">{{ p.doneLabel }}</span>
               </template>
             </div>
 
             <!-- score -->
             <div style="width:78px;text-align:right;position:relative;">
               <span class="sa-mono" style="font-size:21px;font-weight:800;transition:color .4s;" :style="{ color: p.scoreColor }">{{ p.score }}</span>
-              <span v-if="p.justScored && p.gain > 0" class="sa-rise sa-mono" style="position:absolute;right:0;top:-19px;font-size:16px;font-weight:800;color:#5be39a;text-shadow:0 0 10px rgba(91,227,154,.6);">+{{ p.gain }}</span>
+              <span v-if="p.justScored && p.gain > 0" class="sa-rise sa-mono" style="position:absolute;right:0;top:-19px;font-size:16px;font-weight:800;color:var(--sa-mint);text-shadow:0 0 10px rgba(var(--sa-mint-rgb),.6);">+{{ p.gain }}</span>
             </div>
           </div>
           <CompletionBurst v-if="p.justCompleted" />
@@ -220,13 +220,13 @@ onUnmounted(() => {
     </div>
 
     <!-- global progress footer -->
-    <div style="display:flex;align-items:center;gap:22px;padding:9px 22px;border-top:1px solid rgba(56,210,255,.12);background:rgba(8,14,24,.5);">
-      <span style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:#9fb4d0;">GLOBAL PROGRESS</span>
-      <div style="flex:1;height:12px;border-radius:8px;background:rgba(56,210,255,.1);overflow:hidden;position:relative;">
-        <div :style="{ height: '100%', width: globalProgress.globalPct + '%', borderRadius: '8px', background: 'linear-gradient(90deg,#2b7bd6,#36d2ff 55%,#5be39a)', transition: 'width 1s ease', boxShadow: '0 0 16px rgba(54,210,255,.4)' }"></div>
+    <div style="display:flex;align-items:center;gap:22px;padding:9px 22px;border-top:1px solid rgba(var(--sa-cyan-rgb),.12);background:rgba(var(--sa-bg-rgb),.5);">
+      <span style="font-size:13px;font-weight:700;letter-spacing:1.5px;color:var(--sa-text-3);">GLOBAL PROGRESS</span>
+      <div style="flex:1;height:12px;border-radius:8px;background:rgba(var(--sa-cyan-rgb),.1);overflow:hidden;position:relative;">
+        <div :style="{ height: '100%', width: globalProgress.globalPct + '%', borderRadius: '8px', background: 'linear-gradient(90deg,#2b7bd6,var(--sa-cyan) 55%,var(--sa-mint))', transition: 'width 1s ease', boxShadow: '0 0 16px rgba(var(--sa-cyan-rgb),.4)' }"></div>
       </div>
-      <div style="display:flex;align-items:center;gap:8px;"><span class="sa-mono" style="font-size:12px;color:#5f86b0;">COLLECTIVE</span><span class="sa-mono" style="font-size:22px;font-weight:800;color:#36d2ff;">{{ globalProgress.collectiveScore }}</span></div>
-      <div style="display:flex;align-items:center;gap:8px;"><span class="sa-mono" style="font-size:12px;color:#5f86b0;">TASKS</span><span class="sa-mono" style="font-size:22px;font-weight:800;color:#5be39a;">{{ globalProgress.totalCompleted }}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;"><span class="sa-mono" style="font-size:12px;color:var(--sa-text-5);">COLLECTIVE</span><span class="sa-mono" style="font-size:22px;font-weight:800;color:var(--sa-cyan);">{{ globalProgress.collectiveScore }}</span></div>
+      <div style="display:flex;align-items:center;gap:8px;"><span class="sa-mono" style="font-size:12px;color:var(--sa-text-5);">TASKS</span><span class="sa-mono" style="font-size:22px;font-weight:800;color:var(--sa-mint);">{{ globalProgress.totalCompleted }}</span></div>
     </div>
   </section>
 </template>
@@ -236,7 +236,7 @@ onUnmounted(() => {
   position: relative;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(56, 210, 255, 0.14);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.14);
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(14, 22, 38, 0.92), rgba(9, 15, 26, 0.92));
   overflow: hidden;
@@ -245,7 +245,7 @@ onUnmounted(() => {
 .sa-board:fullscreen {
   border: none;
   border-radius: 0;
-  background: #070b14;
+  background: var(--sa-bg-base);
 }
 .sa-task {
   transition: filter 0.15s ease, transform 0.1s ease;
@@ -265,7 +265,7 @@ onUnmounted(() => {
   justify-content: center;
   font-family: 'JetBrains Mono', monospace;
   font-size: 13px;
-  color: #46607f;
+  color: var(--sa-text-6);
   z-index: 1;
 }
 /* all-clear: a gold seal by the name, a pill in the progress column, and a
@@ -274,7 +274,7 @@ onUnmounted(() => {
   flex: none;
   font-size: 15px;
   line-height: 1;
-  filter: drop-shadow(0 0 5px rgba(255, 205, 91, 0.8));
+  filter: drop-shadow(0 0 5px rgba(var(--sa-gold-rgb), 0.8));
 }
 .sa-cleared-pill {
   flex: 1;
@@ -282,12 +282,12 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 1px;
-  color: #ffe08a;
+  color: var(--sa-gold-bright);
   padding: 4px 0;
   border-radius: 999px;
-  border: 1px solid rgba(255, 205, 91, 0.55);
-  background: rgba(255, 205, 91, 0.1);
-  box-shadow: 0 0 12px rgba(255, 205, 91, 0.2);
+  border: 1px solid rgba(var(--sa-gold-rgb), 0.55);
+  background: rgba(var(--sa-gold-rgb), 0.1);
+  box-shadow: 0 0 12px rgba(var(--sa-gold-rgb), 0.2);
 }
 .sa-clearbar-shine {
   position: absolute;

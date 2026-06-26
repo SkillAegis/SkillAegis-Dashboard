@@ -5,7 +5,7 @@ import { ref } from 'vue'
 // row. Mounted while `player.justCompleted` holds, then unmounted — so the CSS
 // animations play exactly once. Emits from the row centre: an expanding ring,
 // a left-to-right finish-line sweep, and a squashed radial spray of glints.
-const COLORS = ['#5be39a', '#36d2ff', '#ffcd5b', '#a8e6ff', '#ffe08a', '#fff6d8']
+const COLORS = ['var(--sa-mint)', 'var(--sa-cyan)', 'var(--sa-gold)', '#a8e6ff', 'var(--sa-gold-bright)', '#fff6d8']
 const COUNT = 22
 
 const particles = ref(
@@ -63,7 +63,7 @@ const particles = ref(
     90deg,
     transparent,
     rgba(255, 255, 255, 0.32),
-    rgba(91, 227, 154, 0.25),
+    rgba(var(--sa-mint-rgb), 0.25),
     transparent
   );
   animation: sa-burst-sweep 1.1s ease-out forwards;
@@ -76,7 +76,7 @@ const particles = ref(
   height: 26px;
   margin: -13px 0 0 -13px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 205, 91, 0.85);
+  border: 2px solid rgba(var(--sa-gold-rgb), 0.85);
   animation: sa-burst-ring 1s ease-out forwards;
 }
 .sa-burst-dot {
