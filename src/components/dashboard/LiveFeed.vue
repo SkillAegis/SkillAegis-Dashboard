@@ -1,6 +1,15 @@
 <script setup>
-import { ref, watch, nextTick } from 'vue'
-import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared } from './dashboardState.js'
+import { ref, reactive, watch, nextTick } from 'vue'
+import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared, PAYLOAD_PREVIEW_LINES } from './dashboardState.js'
+
+// Per-row payload expand state, keyed by stable feed id so a row stays expanded
+// across re-renders (and the per-second relative-time ticks elsewhere).
+const expandedRows = reactive(new Set())
+const isExpanded = (id) => expandedRows.has(id)
+function toggleRow(id) {
+  if (expandedRows.has(id)) expandedRows.delete(id)
+  else expandedRows.add(id)
+}
 
 // Animate the activity timeline as a horizontal slide rather than per-bar height
 // growth. Each update shifts the series one bucket left, so we render the new
@@ -97,8 +106,19 @@ watch(
           <span class="sa-mono" style="font-size:12px;color:var(--sa-text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ e.url }}</span>
         </div>
         <div v-if="e.hasPayload" style="margin:7px 0 0 0;padding:7px 10px;border-radius:7px;background:rgba(var(--sa-bg-rgb),.6);border:1px solid rgba(var(--sa-cyan-rgb),.1);">
-          <div v-for="(ln, li) in e.payloadLines" :key="li" class="sa-mono" style="font-size:11px;line-height:1.5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span style="color:var(--sa-text-5);">{{ ln.k }}</span><span style="color:var(--sa-text-4);">: </span><span style="color:#8fe3b6;">{{ ln.v }}</span></div>
-          <div v-if="e.keyCount > e.payloadLines.length" class="sa-mono" style="font-size:10px;color:var(--sa-cyan);margin-top:3px;">▸ {{ e.keyCount }} keys</div>
+          <div
+            v-for="(ln, li) in (isExpanded(e.id) ? e.payloadLines : e.payloadLines.slice(0, PAYLOAD_PREVIEW_LINES))"
+            :key="li"
+            class="sa-mono"
+            style="font-size:11px;line-height:1.5;"
+            :style="isExpanded(e.id) ? { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } : { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }"
+          ><span style="color:var(--sa-text-5);">{{ ln.k }}</span><span style="color:var(--sa-text-4);">: </span><span style="color:#8fe3b6;">{{ ln.v }}</span></div>
+          <button
+            v-if="e.expandable"
+            type="button"
+            class="sa-mono sa-payload-toggle"
+            @click="toggleRow(e.id)"
+          >{{ isExpanded(e.id) ? '▾' : '▸' }} <template v-if="e.payloadIsString">{{ isExpanded(e.id) ? 'show less' : 'show full' }}</template><template v-else>{{ e.keyCount }} key{{ e.keyCount === 1 ? '' : 's' }}</template></button>
         </div>
       </div>
       <div v-if="feedEmpty" class="sa-mono" style="text-align:center;padding:24px;font-size:12px;color:var(--sa-text-6);">No matching activity</div>
@@ -129,5 +149,23 @@ watch(
 }
 .sa-input::placeholder {
   color: #3c536f;
+}
+.sa-payload-toggle {
+  display: inline-block;
+  margin-top: 3px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  color: var(--sa-cyan);
+}
+.sa-payload-toggle:hover {
+  text-decoration: underline;
+}
+.sa-payload-toggle:focus-visible {
+  outline: 1px solid var(--sa-cyan);
+  outline-offset: 2px;
+  border-radius: 3px;
 }
 </style>

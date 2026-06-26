@@ -802,14 +802,19 @@ function isDisplayablePayload(payload) {
   return true
 }
 
+// Rows in the Live Feed show this many payload lines collapsed; the rest are
+// revealed by the per-row expand toggle (see LiveFeed.vue).
+export const PAYLOAD_PREVIEW_LINES = 2
+
 function payloadToLines(payload) {
   if (typeof payload === 'string') {
-    return { keyCount: 1, lines: [{ k: 'raw', v: payload }] }
+    return { keyCount: 1, isString: true, lines: [{ k: 'raw', v: payload }] }
   }
   const entries = Object.entries(payload)
   return {
     keyCount: entries.length,
-    lines: entries.slice(0, 2).map(([k, v]) => ({ k, v: typeof v === 'object' ? JSON.stringify(v) : String(v) })),
+    isString: false,
+    lines: entries.map(([k, v]) => ({ k, v: typeof v === 'object' ? JSON.stringify(v) : String(v) })),
   }
 }
 
@@ -838,7 +843,8 @@ export const feed = computed(() => {
     const [fg, bg] = methodStyle(e.http_method)
     const hasPayload = isDisplayablePayload(e.payload)
     const { name } = splitEmail(e.user)
-    const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, lines: [] }
+    const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
+    const expandable = pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
     return {
       id: e.id,
       user: name,
@@ -851,6 +857,8 @@ export const feed = computed(() => {
       hasPayload,
       keyCount: pl.keyCount,
       payloadLines: pl.lines,
+      payloadIsString: pl.isString,
+      expandable,
     }
   })
 })
