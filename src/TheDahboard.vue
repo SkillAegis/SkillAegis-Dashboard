@@ -85,9 +85,51 @@ onMounted(() => {
 }
 </style>
 
-<!-- Global helpers: animation keyframes + utility classes used by all dashboard
-     child components (which are scoped and can't define these themselves). -->
+<!-- Global helpers: color tokens + animation keyframes + utility classes used by
+     all dashboard child components (which are scoped and can't define these
+     themselves). Custom properties inherit through the DOM to every child. -->
 <style>
+/* Dashboard color tokens — see CLAUDE.md (Conventions). Channel-triple tokens
+   (--*-rgb) feed rgba(var(--x-rgb), <alpha>); solid accents derive from them so
+   each hue has a single source of truth. The hex/rgb in comments is the literal
+   each token replaced. */
+.sa-root {
+  /* accent channel triples */
+  --sa-cyan-rgb: 54, 210, 255; /* #36d2ff (also unifies stray 56,210,255) */
+  --sa-mint-rgb: 91, 227, 154; /* #5be39a */
+  --sa-gold-rgb: 255, 205, 91; /* #ffcd5b */
+  --sa-gold-bright-rgb: 255, 224, 138; /* #ffe08a */
+  --sa-fire-rgb: 255, 120, 60; /* primary flame glow */
+  --sa-fire-mid-rgb: 255, 138, 60; /* #ff8a3c — solid "ON FIRE" orange */
+  --sa-fire-bright-rgb: 255, 140, 70;
+  --sa-fire-deep-rgb: 255, 93, 60; /* #ff5d3c */
+  --sa-violet-rgb: 176, 139, 255; /* #b08bff */
+  --sa-danger-rgb: 255, 107, 107; /* #ff6b6b */
+
+  /* solid accents (derived from the triples above) */
+  --sa-cyan: rgb(var(--sa-cyan-rgb));
+  --sa-mint: rgb(var(--sa-mint-rgb));
+  --sa-gold: rgb(var(--sa-gold-rgb));
+  --sa-gold-bright: rgb(var(--sa-gold-bright-rgb));
+  --sa-fire-mid: rgb(var(--sa-fire-mid-rgb));
+  --sa-fire-deep: rgb(var(--sa-fire-deep-rgb));
+  --sa-violet: rgb(var(--sa-violet-rgb));
+  --sa-danger: rgb(var(--sa-danger-rgb));
+
+  /* text ramp (brightest → dimmest) */
+  --sa-text-1: #eaf3ff;
+  --sa-text-2: #cfe3ff;
+  --sa-text-3: #9fb4d0;
+  --sa-text-4: #7e98ba;
+  --sa-text-5: #5f86b0;
+  --sa-text-6: #46607f;
+
+  /* dark surface ramp */
+  --sa-bg-rgb: 8, 14, 24; /* panel fill */
+  --sa-bg-deep-rgb: 14, 18, 30; /* gradient floor / deeper panel */
+  --sa-bg-base: #070b14; /* page base */
+  --sa-ink: #0a1322; /* dark text on bright badges */
+}
 .sa-mono {
   font-family: 'JetBrains Mono', ui-monospace, monospace;
 }
