@@ -51,7 +51,7 @@ onMounted(() => {
   color: #cdd9ec;
   background:
     radial-gradient(1200px 700px at 18% -8%, #0d2036 0%, rgba(13, 32, 54, 0) 60%),
-    radial-gradient(1100px 800px at 105% 110%, #11243b 0%, rgba(17, 36, 59, 0) 55%), #070b14;
+    radial-gradient(1100px 800px at 105% 110%, #11243b 0%, rgba(17, 36, 59, 0) 55%), var(--sa-bg-base);
   z-index: 0;
 }
 .sa-grid-overlay {
@@ -155,8 +155,8 @@ onMounted(() => {
   50% { transform: translateY(-5px) rotate(5deg); }
 }
 @keyframes sa-gold {
-  0%, 100% { box-shadow: 0 0 22px rgba(255, 205, 91, 0.5), 0 0 0 0 rgba(255, 205, 91, 0.35); }
-  50% { box-shadow: 0 0 34px rgba(255, 205, 91, 0.8), 0 0 0 7px rgba(255, 205, 91, 0); }
+  0%, 100% { box-shadow: 0 0 22px rgba(var(--sa-gold-rgb), 0.5), 0 0 0 0 rgba(var(--sa-gold-rgb), 0.35); }
+  50% { box-shadow: 0 0 34px rgba(var(--sa-gold-rgb), 0.8), 0 0 0 7px rgba(var(--sa-gold-rgb), 0); }
 }
 @keyframes sa-bolt {
   0%, 100% { transform: scale(1); opacity: 0.85; }
@@ -164,8 +164,8 @@ onMounted(() => {
   55% { transform: scale(1.04); opacity: 0.7; }
 }
 @keyframes sa-clear {
-  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 205, 91, 0.35), 0 0 18px rgba(91, 227, 154, 0.18); }
-  50% { box-shadow: 0 0 0 1px rgba(255, 205, 91, 0.6), 0 0 30px rgba(91, 227, 154, 0.34); }
+  0%, 100% { box-shadow: 0 0 0 1px rgba(var(--sa-gold-rgb), 0.35), 0 0 18px rgba(var(--sa-mint-rgb), 0.18); }
+  50% { box-shadow: 0 0 0 1px rgba(var(--sa-gold-rgb), 0.6), 0 0 30px rgba(var(--sa-mint-rgb), 0.34); }
 }
 .sa-rise { animation: sa-rise 0.5s ease; }
 .sa-flame { animation: sa-flame 0.9s infinite; }
