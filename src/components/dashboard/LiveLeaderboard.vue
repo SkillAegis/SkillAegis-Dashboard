@@ -20,6 +20,20 @@ function toggleTask(player, task) {
   setCompletedState(task.done, player.id, selectedExercise.value.uuid, task.uuid)
 }
 
+// A cleared row shows the fused clear bar for everyone; a logged-in admin
+// hovering the row swaps it back to the clickable per-task squares so they can
+// still toggle completion.
+const hoveredRowId = ref(null)
+function onRowEnter(id) {
+  hoveredRowId.value = id
+}
+function onRowLeave(id) {
+  if (hoveredRowId.value === id) hoveredRowId.value = null
+}
+function showClearBar(p) {
+  return p.complete && !(userAuthenticated.value && hoveredRowId.value === p.id)
+}
+
 // Top room inside the (clipped) rows container so the "+NN" score pop, which
 // floats above a row, isn't cut off for the row at the top of the board.
 const PAD_TOP = 18
@@ -147,6 +161,8 @@ onUnmounted(() => {
           <div
             style="display:flex;align-items:center;gap:14px;width:100%;height:50px;padding:0 8px 0 0;border-radius:12px;"
             :style="{ border: `1px solid ${p.rowBorder}`, background: p.rowBg, boxShadow: p.glow, animation: p.rowAnim }"
+            @mouseenter="onRowEnter(p.id)"
+            @mouseleave="onRowLeave(p.id)"
           >
             <!-- rank -->
             <div style="width:46px;display:flex;align-items:center;justify-content:center;">
@@ -175,10 +191,11 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- task strip: fuses into one bar once every task is cleared, but
-                 admins keep the clickable per-task squares to toggle completion -->
+            <!-- task strip: fuses into one bar once every task is cleared (for
+                 everyone, admins included); a logged-in admin hovering the row
+                 reveals the clickable per-task squares to toggle completion -->
             <div style="flex:1;display:flex;align-items:stretch;height:24px;">
-              <div v-if="p.complete && !userAuthenticated" class="sa-clearbar" style="flex:1;position:relative;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,var(--sa-mint),var(--sa-cyan) 55%,var(--sa-gold));box-shadow:0 0 12px rgba(var(--sa-mint-rgb),.4);">
+              <div v-if="showClearBar(p)" class="sa-clearbar" style="flex:1;position:relative;border-radius:5px;overflow:hidden;background:linear-gradient(90deg,var(--sa-mint),var(--sa-cyan) 55%,var(--sa-gold));box-shadow:0 0 12px rgba(var(--sa-mint-rgb),.4);">
                 <span class="sa-clearbar-shine"></span>
               </div>
               <div v-else style="flex:1;display:flex;gap:5px;align-items:stretch;">
