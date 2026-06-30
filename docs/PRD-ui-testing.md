@@ -57,7 +57,7 @@ fully-covering testing harness.
 | 1 | Mock server core (`dev_mock_server.py`) — contract + simulation loop | Large | Low | ✅ Done |
 | 2 | One-command launcher (`start-mock.sh`) + dependency note | Trivial | None | ✅ Done |
 | 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ✅ Done |
-| 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ⬜ Todo |
+| 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ✅ Done |
 | 5 | On-demand scenario controls (pause / force-clear / prereq chain / select-both) | Medium | Low | ⬜ Todo (partly optional) |
 | 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ⬜ Investigate |
 
@@ -141,12 +141,12 @@ mock, and fix anything that isn't. The probe confirmed the data shapes; this ite
 |---|---|---|
 | `DashboardHeader` — clock, collective score, user count, global progress | `now`, `globalProgress`, `userCount` | ✅ |
 | `DashboardHeader` — sort / hide-inactive / auto-paginate toggles | client-side refs | ✅ |
-| `DashboardHeader` — exercise switcher | 2 exercises defined, **1 selected** by default | ⚠️ needs ≥2 selected (see gap-fill) |
+| `DashboardHeader` — exercise switcher | 2 exercises defined, **both selected** by default | ✅ |
 | `LiveLeaderboard` — rows, ranks, top-3 medals, +N pops, live re-sort | 20 players, live score churn | ✅ |
 | `LiveLeaderboard` — auto-pagination | 20 players > rows-per-page | ✅ |
 | `LiveLeaderboard` — fused clear bar + **admin hover-reveal** (recent change) | ≥1 finisher + admin mode | ✅ |
 | `LiveLeaderboard` — activity heatmap strip | per-user activity buffers | ✅ |
-| `LiveLeaderboard` — task square states: done / available | `tasks_completion` + `requirements` | ⚠️ "locked" (unmet prereq) never shown (see gap-fill) |
+| `LiveLeaderboard` — task square states: done / available / **locked** | `tasks_completion` + `requirements` chain on exercise 2 | ✅ |
 | `CompletionBurst` — all-clear burst | a player completing their **last** task live | ✅ |
 | `HallOfFame` — podium (2nd·1st·3rd) | `userStats.hall_of_fame` top 3 | ✅ |
 | `ChampionsSlot` — On Fire / Speed / Trophies / Finishers + scene dots + pin | `time_on_fire`, `speed_runner`+ceiling, 4 trophy ids, finishers | ✅ |
@@ -155,16 +155,24 @@ mock, and fix anything that isn't. The probe confirmed the data shapes; this ite
 | `LiveFeed` — "Just Cleared" strip | completion timestamps | ✅ |
 | `LoginForm` / admin path — login, logout, toggles, reset, task-toggle | `/login`, `/logout`, mock admin events | ✅ |
 
-**Gap-fill (the two ⚠️ rows):**
-- Default-select **both** exercises (or expose `--exercises N`) so the header switcher is
-  testable without first toggling the 2nd in the admin panel.
-- Add an optional **prerequisite chain** for one exercise's tasks (populate `requirements`),
-  so the leaderboard's locked-task (dim, non-blink) square styling is actually rendered. Keep
-  the default chain-free so the common case stays simple.
+**Gap-fill (the two ⚠️ rows) — ✅ Done:**
+- **Both** exercises are now selected by default, so the header's scenario switcher
+  (`active_exercises.length > 1`) renders without first toggling the 2nd in the admin panel.
+- The **second** exercise (`Threat-Actor Attribution`) carries a linear **prerequisite chain**
+  (each task's `requirements.inject_uuid` points at the previous task), so the leaderboard's
+  locked-task (dim, non-blink) square styling is rendered. The default-shown exercise
+  (`MISP Triage Drill`) stays chain-free, keeping the common case simple. It is seeded last (so
+  exercise 1's verified seed sequence is unchanged) with a spread of in-order progress, and the
+  two exercise-1 finishers clear it too — a full clean run still spans **both** selected
+  exercises, keeping the Speed Index at 10.0 despite the larger combined ceiling.
 
 **Affected files.** `backend/dev_mock_server.py`.
 
-**Acceptance.** Every row above is ✅ — visually confirmed in the running dashboard.
+**Acceptance.** Every row above is ✅. ✅ Verified by a Socket.IO probe against the running mock:
+2 exercises defined and both selected; exercise 1 chain-free, exercise 2 a clean linear chain;
+the exercise-2 board shows 63 done / 14 available / 23 locked squares (10 players with a locked
+square, 8 showing all three states at once); exactly 2 players clear both exercises; speedrunner
+ceiling 320 with a top speedrunner score of 320 → Speed Index 10.0.
 
 ---
 

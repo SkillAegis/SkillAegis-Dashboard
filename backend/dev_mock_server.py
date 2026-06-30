@@ -17,7 +17,9 @@ What it drives, on a timer, so the board is alive the moment you load it:
   * a Live Feed of small / large / nested-object / raw-string JSON payloads
     (exercises the 2.5 expand-collapse toggle),
   * the gamification states: on-fire streaks, speed-runner index, trophies,
-    hall-of-fame podium and the per-player activity heatmaps.
+    hall-of-fame podium and the per-player activity heatmaps,
+  * a second selected exercise with a prerequisite chain — drives the header's
+    scenario switcher and the leaderboard's locked-task squares.
 
 Auth: starts authenticated (so you can test the admin-only behaviours) unless
 ``--unauth`` is given. Log in / out from the admin panel toggles it live; any
@@ -75,9 +77,13 @@ def build_world(n_players):
          "score": 10 + 5 * i, "requirements": {}}
         for i in range(8)
     ]
+    # Linear prerequisite chain: each task needs the previous one, so the
+    # leaderboard renders locked (dim, non-blink) squares. tasks_a stays
+    # chain-free, keeping the default-shown exercise simple.
     tasks_b = [
         {"name": TASK_NAMES[i], "uuid": _uuid("taskB", i), "description": TASK_NAMES[i],
-         "score": 20, "requirements": {}}
+         "score": 20,
+         "requirements": {"inject_uuid": _uuid("taskB", i - 1)} if i else {}}
         for i in range(5)
     ]
     STATE["exercises"] = [
@@ -88,7 +94,8 @@ def build_world(n_players):
          "description": "Attribute the campaign and publish.",
          "level": "advanced", "priority": 20, "gamification": True, "tasks": tasks_b},
     ]
-    STATE["selected"] = [_uuid("exer", 1)]   # exercise 0 shown; toggle #2 in admin panel
+    # Both selected by default so the header's scenario switcher is visible.
+    STATE["selected"] = [ex["uuid"] for ex in STATE["exercises"]]
 
     STATE["users"] = [
         {"user_id": i, "email": f"agent{i:02d}@{ORGS[i % len(ORGS)]}"}
@@ -128,6 +135,19 @@ def build_world(n_players):
     STATE["history"] = [0] * HISTORY_BUFFER
     for i in range(len(STATE["history"]) - 24, len(STATE["history"])):
         STATE["history"][i] = random.randint(0, 4)
+
+    # Seed the chained second exercise last, so the first exercise's seed
+    # sequence above is unchanged. A spread of in-order progress renders the
+    # done / available / locked squares at once; the two ex0 finishers clear it
+    # too, so a full clean run still spans both selected exercises (a player at
+    # the combined max keeps the Speed Index at 10.0 despite the larger ceiling).
+    ex1 = STATE["exercises"][1]
+    n_tasks1 = len(ex1["tasks"])
+    for idx, u in enumerate(STATE["users"]):
+        uid = u["user_id"]
+        count1 = n_tasks1 if idx < 2 else random.randint(0, n_tasks1)
+        for ti in range(count1):
+            STATE["done"][uid][ex1["uuid"]][ti] = now - random.uniform(30, 600)
 
 
 def _ignite(uid, last_completion):
