@@ -6,6 +6,7 @@ import functools
 import json
 import argparse
 import os
+import re
 import signal
 import subprocess
 import atexit
@@ -99,14 +100,16 @@ sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
 sio.attach(app)
 
 
+# Any localhost port in DEBUG — Vite auto-increments off :5173 when it's taken.
+DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+
+
 @web.middleware
 async def cors_middleware(request, handler):
-    ALLOWED_ORIGINS = {"http://localhost:5173"} if DEBUG else {}
-
     response = await handler(request)
     if DEBUG:
         origin = request.headers.get("Origin")
-        if origin in ALLOWED_ORIGINS:
+        if origin and DEV_ORIGIN_RE.match(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type"

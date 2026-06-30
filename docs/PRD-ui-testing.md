@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft |
+| **Status** | Complete — all 6 items ✅ |
 | **Date** | 2026-06-30 |
 | **Scope** | A standalone mock Socket.IO server + the wiring/docs to develop & test the dashboard UI without MISP, Docker, scenarios, or ZeroMQ |
 | **Non-goals** | Not a test of the evaluation engine, scoring math, or scenario format (that needs the real backend / ZMQ replay). Not an automated/CI test suite — this is a manual, interactive harness. |
@@ -59,10 +59,11 @@ fully-covering testing harness.
 | 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ✅ Done |
 | 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ✅ Done |
 | 5 | On-demand scenario controls (pause / force-clear / empty / reset) | Medium | Low | ✅ Done |
-| 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ⬜ Investigate |
+| 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ✅ Done |
 
 Ship easiest-first (2 → 3 unblock everyone; 4 → 5 firm up coverage). Item 5 is partly optional.
-Item 6 is an investigation surfaced during item 2 verification — schedule independently.
+Item 6 was an investigation surfaced during item 2 verification — now resolved (DEV CORS
+accepts any localhost port on both servers).
 
 ---
 
@@ -211,7 +212,7 @@ flag flips, no movement over a full tick window, `keep_alive` still flowing; `/m
 
 ---
 
-## 6. Dev CORS / Vite-port mismatch (mock + real server) — ⬜ Investigate
+## 6. Dev CORS / Vite-port mismatch (mock + real server) — ✅ Done
 
 **Problem.** During item 2 verification, the server logged:
 
@@ -235,20 +236,39 @@ mismatch would hit the **real** server, so investigate both together.
 - **Client** (`src/socket.js`): hardcodes the *backend* URL to `http://localhost:4001` in DEV and
   sends credentials; the value the servers reject is the *frontend* origin, which is what drifts.
 
-**To investigate / options (not yet decided):**
-1. Pin Vite to a fixed port — `server: { port: 5173, strictPort: true }` in `vite.config.js` — so
-   it fails loudly instead of silently drifting. Simplest, single source of truth; downside: can't
-   run two frontends at once.
-2. Widen the dev allowlist on both servers (accept any `http://localhost:<port>` /
-   `127.0.0.1:<port>` in DEV), or make it configurable (`--origin` flag / env var).
-3. Reconcile the real server's Socket.IO `'*'` + credentials combo with the explicit-origin echo it
-   already does for its HTTP routes.
+**Investigation finding (the real server's Socket.IO `'*'` is already credential-safe).**
+The acceptance criteria explicitly wants an *incremented* port to keep working, which rules out
+option 1's `strictPort: true` (that would make Vite fail rather than drift). So the fix is
+**option 2** — widen the DEV allowlist — applied as a localhost-any-port predicate on both servers,
+plus making the canonical Vite port explicit (no `strictPort`, so a busy :5173 still drifts and the
+widened allowlist covers it). Option 3 turned out to need **no change**: engineio (4.13.3) with
+`cors_allowed_origins='*'` never returns a literal `*` when an `Origin` header is present — it
+*echoes the actual origin* and adds `Access-Control-Allow-Credentials: true` (verified by reading
+`engineio/base_server.py::_cors_headers`), so the real server's Socket.IO handshake already works
+with `withCredentials: true` on any port. Its production `'*'` is shared with prod and left
+untouched (out of scope, no prod risk).
+
+**Implemented rule — in DEBUG/DEV, any `http://localhost:<port>` or `http://127.0.0.1:<port>` is
+allowed; nothing else:**
+1. **Vite** (`vite.config.js`): canonical `server: { port: 5173 }` makes the dev URL explicit and
+   the :4001 pairing intuitive; `strictPort` deliberately left off so a busy port still increments.
+2. **Mock** (`backend/dev_mock_server.py`): a single `is_dev_origin(origin)` predicate
+   (`^http://(localhost|127\.0\.0\.1):\d+$`) drives **both** the Socket.IO `cors_allowed_origins`
+   (engineio's *callable* form) and the HTTP `/login`·`/logout` middleware — the fixed `:5173`
+   list/set is gone.
+3. **Real** (`backend/server.py`): the DEBUG HTTP `cors_middleware` matches the same
+   `DEV_ORIGIN_RE` instead of the hardcoded `{"http://localhost:5173"}` set; Socket.IO `'*'` left
+   as-is per the finding above.
 
 **Affected files.** `vite.config.js`, `backend/dev_mock_server.py`, `backend/server.py`.
 
-**Acceptance.** `npm run dev` + either server connect cleanly (Socket.IO handshake + `/login` /
-`/logout`) regardless of whether Vite lands on :5173 or an incremented port, with a documented,
-intentional rule for which origins are allowed in DEV.
+**Acceptance.** ✅ `npm run dev` + either server connect cleanly regardless of the Vite port.
+Verified live against the running mock from a drifted `:5174` origin: OPTIONS `/login` preflight →
+`204` echoing `Access-Control-Allow-Origin: …:5174` + `Allow-Credentials: true`; `POST /login` →
+`200` with the same headers; the Socket.IO polling handshake → same echo + credentials; a
+disallowed `http://evil.com` origin gets `200` but **no** CORS headers (browser blocks the
+cross-origin read). Predicate unit-tested across localhost/127.0.0.1 ports, missing-port, `https`,
+and look-alike hosts (`localhost:5173.evil.com`); both backends `py_compile` clean.
 
 ---
 

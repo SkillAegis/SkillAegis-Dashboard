@@ -38,6 +38,7 @@ credentials are accepted.
 
 import argparse
 import random
+import re
 import time
 
 import socketio
@@ -56,9 +57,22 @@ TASK_NAMES = [
 ACTIVITY_BUFFER = 32          # heat bars per player
 HISTORY_BUFFER = 120          # 5s buckets in the feed timeline (~10 min shown)
 
+_DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
+
+
+def is_dev_origin(origin, *_):
+    """True for any http://localhost:<port> / http://127.0.0.1:<port> origin.
+
+    Dev-only: lets the dashboard connect whatever port Vite lands on (it
+    auto-increments off :5173 when that's taken). Accepted by engineio's
+    ``cors_allowed_origins`` as a callable and reused by the HTTP middleware.
+    """
+    return bool(origin) and bool(_DEV_ORIGIN_RE.match(origin))
+
+
 sio = socketio.AsyncServer(
     async_mode="aiohttp",
-    cors_allowed_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    cors_allowed_origins=is_dev_origin,
 )
 
 STATE = {
@@ -590,9 +604,6 @@ async def catch_all(event, sid, *args):
 # ----------------------------------------------------------------------------
 # HTTP routes (login / logout) with dev CORS
 # ----------------------------------------------------------------------------
-DEV_ORIGINS = {"http://localhost:5173", "http://127.0.0.1:5173"}
-
-
 @web.middleware
 async def cors_middleware(request, handler):
     if request.method == "OPTIONS":
@@ -600,7 +611,7 @@ async def cors_middleware(request, handler):
     else:
         resp = await handler(request)
     origin = request.headers.get("Origin", "")
-    if origin in DEV_ORIGINS:
+    if is_dev_origin(origin):
         resp.headers["Access-Control-Allow-Origin"] = origin
         resp.headers["Access-Control-Allow-Credentials"] = "true"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
