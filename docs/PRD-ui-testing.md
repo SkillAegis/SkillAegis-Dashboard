@@ -55,12 +55,14 @@ fully-covering testing harness.
 | # | Item | Effort | Risk | Status |
 |---|------|--------|------|--------|
 | 1 | Mock server core (`dev_mock_server.py`) — contract + simulation loop | Large | Low | ✅ Done |
-| 2 | One-command launcher (`start-mock.sh`) + dependency note | Trivial | None | ⬜ Todo |
+| 2 | One-command launcher (`start-mock.sh`) + dependency note | Trivial | None | ✅ Done |
 | 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ⬜ Todo |
 | 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ⬜ Todo |
 | 5 | On-demand scenario controls (pause / force-clear / prereq chain / select-both) | Medium | Low | ⬜ Todo (partly optional) |
+| 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ⬜ Investigate |
 
 Ship easiest-first (2 → 3 unblock everyone; 4 → 5 firm up coverage). Item 5 is partly optional.
+Item 6 is an investigation surfaced during item 2 verification — schedule independently.
 
 ---
 
@@ -72,7 +74,7 @@ work is required for basic use. Source-only (no `dist/` impact); reuses `python-
 
 ---
 
-## 2. One-command launcher + dependency note
+## 2. One-command launcher + dependency note — ✅ Done
 
 **Problem.** Running the mock today is `cd backend && ./venv/bin/python dev_mock_server.py …`,
 which assumes a venv and isn't discoverable. `start.sh` already gives the real backend a
@@ -96,7 +98,8 @@ The deps are already in `requirements.txt`, so the only setup is the standard ba
 **Affected files.** New `start-mock.sh` (chmod +x).
 
 **Acceptance.** `./start-mock.sh` boots the mock on :4001 with a venv if present; flags pass
-through.
+through. ✅ Verified: launcher sources the co-located venv and binds :4001 (Socket.IO handshake
+`HTTP 200`); `--port/--players/--tick/--unauth` pass through (banner reflects them).
 
 ---
 
@@ -178,6 +181,47 @@ deterministic control ("freeze here", "make player 7 clear now").
 
 **Acceptance.** A tester can force the headline states (full clear, empty board, frozen frame)
 without waiting on the simulation.
+
+---
+
+## 6. Dev CORS / Vite-port mismatch (mock + real server) — ⬜ Investigate
+
+**Problem.** During item 2 verification, the server logged:
+
+```
+http://localhost:5174 is not an accepted origin.
+```
+
+Vite came up on **:5174**, not :5173, because `vite.config.js` pins no port (`server.port` /
+`strictPort` unset) — Vite auto-increments when :5173 is occupied (a second `npm run dev`, or
+another process on the port). Both servers hardcode the dev frontend origin to **:5173**, so the
+Socket.IO connection and the credentialed `/login` · `/logout` requests get rejected. The same
+mismatch would hit the **real** server, so investigate both together.
+
+**Where the :5173 assumption is baked in:**
+- **Mock** (`backend/dev_mock_server.py`): Socket.IO `cors_allowed_origins=[…:5173]` (line 49)
+  **and** HTTP `DEV_ORIGINS = {…:5173}` (line 545).
+- **Real** (`backend/server.py`): HTTP `cors_middleware` `ALLOWED_ORIGINS = {"http://localhost:5173"}`
+  under `DEBUG` (line 104). Its Socket.IO server uses `cors_allowed_origins='*'` (line 98) —
+  wildcard, so the handshake itself isn't origin-rejected, but a wildcard `*` is incompatible with
+  `withCredentials: true` (which `src/socket.js` sets in DEV), so that path needs its own check.
+- **Client** (`src/socket.js`): hardcodes the *backend* URL to `http://localhost:4001` in DEV and
+  sends credentials; the value the servers reject is the *frontend* origin, which is what drifts.
+
+**To investigate / options (not yet decided):**
+1. Pin Vite to a fixed port — `server: { port: 5173, strictPort: true }` in `vite.config.js` — so
+   it fails loudly instead of silently drifting. Simplest, single source of truth; downside: can't
+   run two frontends at once.
+2. Widen the dev allowlist on both servers (accept any `http://localhost:<port>` /
+   `127.0.0.1:<port>` in DEV), or make it configurable (`--origin` flag / env var).
+3. Reconcile the real server's Socket.IO `'*'` + credentials combo with the explicit-origin echo it
+   already does for its HTTP routes.
+
+**Affected files.** `vite.config.js`, `backend/dev_mock_server.py`, `backend/server.py`.
+
+**Acceptance.** `npm run dev` + either server connect cleanly (Socket.IO handshake + `/login` /
+`/logout`) regardless of whether Vite lands on :5173 or an incremented port, with a documented,
+intentional rule for which origins are allowed in DEV.
 
 ---
 
