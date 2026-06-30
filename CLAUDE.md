@@ -31,7 +31,13 @@ server, but with synthetic, animated data so the board is alive the moment you l
   `npm run dev` and open the Vite URL. Because DEV `socket.js` is pinned to `:4001`, run the
   mock **or** the real backend, not both.
 - Flags pass through `start-mock.sh`: `--players N` (default 20), `--tick S` (default 2.5),
-  `--port P` (default 4001), `--unauth` (start as viewer; default starts authenticated as admin).
+  `--port P` (default 4001), `--unauth` (start as viewer; default starts authenticated as admin),
+  `--no-sim` (start frozen), `--seed N` (reproducible world; default 1).
   Log in/out from the admin panel toggles auth live — any credentials are accepted.
+- On-demand scenario controls (force a headline state without the admin panel) —
+  `curl -X POST http://localhost:4001/mock/<cmd>` where `<cmd>` is
+  `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
+  `clear/<user_id>` (one player clears — drives the all-clear burst), `empty` (wipe the board),
+  or `reset` (rebuild the world). `GET /` reports the paused flag and lists the controls.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
   real backend (`--zmq_log_file` replays a recorded session). See `docs/PRD-ui-testing.md`.

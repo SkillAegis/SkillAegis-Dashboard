@@ -8,6 +8,16 @@ to ``http://localhost:4001``, so just run this instead of ``backend/main.py``.
 
     python3 backend/dev_mock_server.py [--host H] [--port P]
                                        [--players N] [--unauth] [--tick SEC]
+                                       [--no-sim] [--seed N]
+
+On-demand scenario controls — POST to these (no admin panel needed) to force
+headline states for inspection or screenshots:
+  * ``/mock/pause`` · ``/mock/resume`` — freeze / unfreeze the simulation
+    (``--no-sim`` starts paused); the board stays served, just stops moving,
+  * ``/mock/clear`` — every player clears every selected task (full board),
+  * ``/mock/clear/<user_id>`` — one player clears (drives the all-clear burst),
+  * ``/mock/empty`` — wipe all progress to a fresh board,
+  * ``/mock/reset`` — rebuild the synthetic world from scratch.
 
 What it drives, on a timer, so the board is alive the moment you load it:
   * a full board of N players with scores ticking up and rows re-sorting
@@ -53,6 +63,7 @@ sio = socketio.AsyncServer(
 
 STATE = {
     "authenticated": True,
+    "paused": False,
     "players": 20,
     "exercises": [],          # public exercise dicts (get_exercises shape)
     "selected": [],           # selected exercise uuids
@@ -152,6 +163,18 @@ def build_world(n_players):
 
 def _ignite(uid, last_completion):
     STATE["fire"][uid] = {"start": last_completion - 30, "until": last_completion + 100}
+
+
+def _clear_user(uid, now=None):
+    # Mark every task of every selected exercise done; keep already-completed
+    # timestamps so the player's *last* task lands now (drives the all-clear burst).
+    now = now if now is not None else time.time()
+    for ex in STATE["exercises"]:
+        if ex["uuid"] in STATE["selected"]:
+            done = STATE["done"][uid][ex["uuid"]]
+            for ti in range(len(ex["tasks"])):
+                done.setdefault(ti, now)
+    _ignite(uid, now)
 
 
 # ----------------------------------------------------------------------------
@@ -367,6 +390,11 @@ async def emit_all(to=None):
 async def simulate(tick):
     while True:
         await sio.sleep(tick)
+        if STATE["paused"]:
+            # Frozen for inspection/screenshots: keep the connection fresh but
+            # don't mutate scores, feed or buffers.
+            await sio.emit("keep_alive", {"zmq_last_time": int(time.time())})
+            continue
         now = time.time()
         ex0 = STATE["exercises"][0]
         ex0_uuid = ex0["uuid"]
@@ -591,8 +619,60 @@ async def logout(request):
 
 
 async def index(request):
-    return web.json_response({"mock": "SkillAegis dashboard dev server",
-                              "authenticated": STATE["authenticated"]})
+    return web.json_response({
+        "mock": "SkillAegis dashboard dev server",
+        "authenticated": STATE["authenticated"],
+        "paused": STATE["paused"],
+        "controls": ["POST /mock/pause", "POST /mock/resume", "POST /mock/clear",
+                     "POST /mock/clear/<user_id>", "POST /mock/empty",
+                     "POST /mock/reset"],
+    })
+
+
+# --- On-demand scenario controls (dev-only HTTP pokes) ----------------------
+async def mock_pause(request):
+    STATE["paused"] = True
+    return web.json_response({"success": True, "paused": True})
+
+
+async def mock_resume(request):
+    STATE["paused"] = False
+    return web.json_response({"success": True, "paused": False})
+
+
+async def mock_clear_all(request):
+    for uid in STATE["done"]:
+        _clear_user(uid)
+    await emit_all()
+    return web.json_response({"success": True, "cleared": "all"})
+
+
+async def mock_clear_user(request):
+    try:
+        uid = int(request.match_info["user_id"])
+    except ValueError:
+        return web.json_response({"success": False, "error": "user_id must be an int"},
+                                 status=400)
+    if uid not in STATE["done"]:
+        return web.json_response({"success": False, "error": f"no user {uid}"}, status=404)
+    _clear_user(uid)
+    await emit_all()
+    return web.json_response({"success": True, "cleared": uid})
+
+
+async def mock_empty(request):
+    for uid in STATE["done"]:
+        for ex_uuid in STATE["done"][uid]:
+            STATE["done"][uid][ex_uuid] = {}
+        STATE["fire"][uid] = None
+    await emit_all()
+    return web.json_response({"success": True, "board": "empty"})
+
+
+async def mock_reset(request):
+    build_world(STATE["players"])
+    await emit_all()
+    return web.json_response({"success": True, "reset": True})
 
 
 async def options_handler(request):
@@ -606,11 +686,16 @@ def main():
     ap.add_argument("--players", type=int, default=20)
     ap.add_argument("--tick", type=float, default=2.5, help="simulation tick seconds")
     ap.add_argument("--unauth", action="store_true", help="start logged out (viewer)")
+    ap.add_argument("--no-sim", action="store_true",
+                    help="start with the simulation paused (frozen board)")
+    ap.add_argument("--seed", type=int, default=1,
+                    help="random seed for a reproducible world (default 1)")
     args = ap.parse_args()
 
     STATE["players"] = args.players
     STATE["authenticated"] = not args.unauth
-    random.seed(1)
+    STATE["paused"] = args.no_sim
+    random.seed(args.seed)
     build_world(args.players)
 
     app = web.Application(middlewares=[cors_middleware])
@@ -618,6 +703,12 @@ def main():
     app.router.add_get("/", index)
     app.router.add_post("/login", login)
     app.router.add_post("/logout", logout)
+    app.router.add_post("/mock/pause", mock_pause)
+    app.router.add_post("/mock/resume", mock_resume)
+    app.router.add_post("/mock/clear", mock_clear_all)
+    app.router.add_post("/mock/clear/{user_id}", mock_clear_user)
+    app.router.add_post("/mock/empty", mock_empty)
+    app.router.add_post("/mock/reset", mock_reset)
     app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)
 
     async def _start(app):
@@ -626,8 +717,11 @@ def main():
 
     print(f"Mock dashboard server on http://{args.host}:{args.port} "
           f"({args.players} players, tick {args.tick}s, "
-          f"{'admin' if STATE['authenticated'] else 'viewer'} mode)")
+          f"{'admin' if STATE['authenticated'] else 'viewer'} mode"
+          f"{', PAUSED' if STATE['paused'] else ''})")
     print("Point `npm run dev` (http://localhost:5173) at it — it already targets :4001.")
+    print(f"Controls: curl -X POST http://localhost:{args.port}/mock/"
+          "{pause,resume,clear,clear/<id>,empty,reset}")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 

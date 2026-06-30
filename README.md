@@ -92,8 +92,16 @@ npm run dev            # then open the Vite URL it prints
 
 Run the mock **or** the real backend, not both — in DEV the frontend connects to `:4001`. The
 mock starts in admin mode (any login credentials are accepted); pass `--unauth` to start as a
-viewer. Other flags: `--players N`, `--tick S`, `--port P`. This is a UI harness only — it does
-not run the evaluation engine. See [`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
+viewer. Other flags: `--players N`, `--tick S`, `--port P`, `--no-sim` (start frozen),
+`--seed N` (reproducible world).
+
+To force a headline state without the admin panel, POST to the dev-only controls — e.g.
+`curl -X POST http://localhost:4001/mock/clear/1` makes player 1 clear everything (the all-clear
+burst). Available: `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
+`clear/<user_id>`, `empty` (wipe the board), `reset` (rebuild the world).
+
+This is a UI harness only — it does not run the evaluation engine. See
+[`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
 
 
 ## Installation

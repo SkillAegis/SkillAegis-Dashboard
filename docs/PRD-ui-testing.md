@@ -58,7 +58,7 @@ fully-covering testing harness.
 | 2 | One-command launcher (`start-mock.sh`) + dependency note | Trivial | None | ✅ Done |
 | 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ✅ Done |
 | 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ✅ Done |
-| 5 | On-demand scenario controls (pause / force-clear / prereq chain / select-both) | Medium | Low | ⬜ Todo (partly optional) |
+| 5 | On-demand scenario controls (pause / force-clear / empty / reset) | Medium | Low | ✅ Done |
 | 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ⬜ Investigate |
 
 Ship easiest-first (2 → 3 unblock everyone; 4 → 5 firm up coverage). Item 5 is partly optional.
@@ -176,24 +176,38 @@ ceiling 320 with a top speedrunner score of 320 → Speed Index 10.0.
 
 ---
 
-## 5. On-demand scenario controls (partly optional)
+## 5. On-demand scenario controls — ✅ Done
 
 **Problem.** The simulation is autonomous; targeted testing and clean screenshots want
 deterministic control ("freeze here", "make player 7 clear now").
 
-**Proposed change.** Lightweight, dev-only controls (pick the subset that earns its keep):
+**Implemented** — lightweight, dev-only controls (`backend/dev_mock_server.py`):
 
-- `--no-sim` / a pause toggle — freeze the board for inspection/screenshots (state still served).
-- A tiny HTTP poke route, e.g. `POST /mock/clear/<user_id>` and `POST /mock/reset` — force a
-  specific player to clear, or reset the world, without the admin panel. (The admin panel's
-  reset / task-toggle / exercise-selection already work through the mock for interactive use.)
-- Already present and worth documenting: `--players N`, `--tick S`, `--unauth`, fixed
-  `random.seed` for reproducible runs.
+- **Pause/freeze.** `--no-sim` starts the board frozen; `POST /mock/pause` and `POST /mock/resume`
+  toggle it live. While paused the sim stops mutating scores / feed / buffers but still emits
+  `keep_alive`, so the connection stays fresh for an inspection/screenshot frame.
+- **HTTP poke routes** (no admin panel / curl-friendly), each mutates the in-memory model and
+  re-emits the whole-state events:
+  - `POST /mock/clear/<user_id>` — one player clears every selected task (keeps existing
+    timestamps so the *last* task lands now → drives the all-clear `CompletionBurst`).
+  - `POST /mock/clear` — every player clears (full finished board).
+  - `POST /mock/empty` — wipe all progress + on-fire to a fresh, zeroed board.
+  - `POST /mock/reset` — rebuild the synthetic world from scratch.
+- **Reproducibility / already present, now documented.** `--seed N` (default 1) makes the world
+  deterministic; `--players N`, `--tick S`, `--unauth` documented in item 3 / the docstring.
+  `GET /` reports the `paused` flag and lists the control routes for discoverability.
 
-**Affected files.** `backend/dev_mock_server.py` (+ a line in the docs from item 3).
+The admin panel's reset / task-toggle / exercise-selection still work through the mock for
+interactive use; these routes add a no-UI path for scripted/curl-driven state forcing.
 
-**Acceptance.** A tester can force the headline states (full clear, empty board, frozen frame)
-without waiting on the simulation.
+**Affected files.** `backend/dev_mock_server.py`, `CLAUDE.md`, `README.md`.
+
+**Acceptance.** ✅ A tester can force the headline states without waiting on the simulation.
+Verified by a Socket.IO probe against the running mock: `/mock/clear/1` → user 1 at 13/13 done;
+`/mock/empty` → all-zero board; `/mock/clear` → every player at the max; `/mock/pause` → `paused`
+flag flips, no movement over a full tick window, `keep_alive` still flowing; `/mock/resume` +
+`/mock/reset` → fresh mid-session board; `--no-sim` boots with `paused: true`; an unknown
+`user_id` returns HTTP 404.
 
 ---
 
