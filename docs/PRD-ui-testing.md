@@ -56,7 +56,7 @@ fully-covering testing harness.
 |---|------|--------|------|--------|
 | 1 | Mock server core (`dev_mock_server.py`) — contract + simulation loop | Large | Low | ✅ Done |
 | 2 | One-command launcher (`start-mock.sh`) + dependency note | Trivial | None | ✅ Done |
-| 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ⬜ Todo |
+| 3 | Documentation — CLAUDE.md "Commands" + README run section | Quick | None | ✅ Done |
 | 4 | Surface-coverage matrix + gap-fill (every component & recent change) | Medium | Low | ⬜ Todo |
 | 5 | On-demand scenario controls (pause / force-clear / prereq chain / select-both) | Medium | Low | ⬜ Todo (partly optional) |
 | 6 | Dev CORS / Vite-port mismatch — investigate for mock **and** real server | Medium | Low | ⬜ Investigate |
@@ -103,7 +103,7 @@ through. ✅ Verified: launcher sources the co-located venv and binds :4001 (Soc
 
 ---
 
-## 3. Documentation
+## 3. Documentation — ✅ Done
 
 **Problem.** Nothing tells a developer the harness exists or how the dev ports wire together.
 
@@ -121,6 +121,11 @@ through. ✅ Verified: launcher sources the co-located venv and binds :4001 (Soc
 **Affected files.** `CLAUDE.md`, `README.md`.
 
 **Acceptance.** A newcomer can go from clone to a live, populated dashboard using only the docs.
+✅ Done: no `CLAUDE.md` existed, so it was created with a *Commands* section (frontend / real
+backend / mock-server subsection) plus a one-line orientation; `README.md` gained a matching
+"Testing the dashboard (mock server)" subsection under *Development*. Both state the :4001
+mock-or-real rule, the pass-through flags, admin-vs-`--unauth` auth, and that the harness does not
+run the evaluation engine (link to this PRD).
 
 ---
 

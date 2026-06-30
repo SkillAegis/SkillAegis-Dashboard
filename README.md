@@ -79,6 +79,22 @@ npm run build
 npm run lint
 ```
 
+### Testing the dashboard (mock server)
+
+To develop the dashboard UI without MISP, Docker, scenarios or ZeroMQ, run the mock Socket.IO
+server. It serves synthetic, animated data on `:4001` using the same event contract as the real
+backend:
+
+```sh
+./start-mock.sh        # serve synthetic data on :4001 (instead of ./start.sh)
+npm run dev            # then open the Vite URL it prints
+```
+
+Run the mock **or** the real backend, not both — in DEV the frontend connects to `:4001`. The
+mock starts in admin mode (any login credentials are accepted); pass `--unauth` to start as a
+viewer. Other flags: `--players N`, `--tick S`, `--port P`. This is a UI harness only — it does
+not run the evaluation engine. See [`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
+
 
 ## Installation
 ```bash
