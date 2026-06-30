@@ -44,7 +44,7 @@ const currentPage = ref(0)
 let timerID = null
 let resizeObserver = null
 
-const sortLabel = computed(() => (sortByScore.value ? 'RANKED BY SCORE' : 'JOIN ORDER'))
+const sortLabel = computed(() => (sortByScore.value ? 'RANKED BY SCORE' : 'BY NAME'))
 
 const pageCount = computed(() => {
   if (!autoPaginate.value) return 1

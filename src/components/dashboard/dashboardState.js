@@ -319,14 +319,23 @@ export const players = computed(() => {
 
   if (hideInactive.value) rows = rows.filter((r) => r.active)
 
+  // Competitive standing by score, computed independent of the display sort
+  // below — so the medal squares and the top-3 leader treatment follow the
+  // actual top scorers even when the board is ordered by name / join order.
+  const scoreRank = new Map()
+  ;[...rows]
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .forEach((r, i) => scoreRank.set(r.id, i))
+
   rows.sort(
     sortByScore.value
       ? (a, b) => b.score - a.score || a.name.localeCompare(b.name)
-      : (a, b) => a.seq - b.seq || a.name.localeCompare(b.name)
+      : (a, b) => a.name.localeCompare(b.name) || a.seq - b.seq
   )
 
-  return rows.map((r, rank) => {
-    const top = sortByScore.value && rank < 3 && r.score > 0
+  return rows.map((r, i) => {
+    const sRank = scoreRank.get(r.id)
+    const top = sRank < 3 && r.score > 0
     const onFire = r.isFire
     const just = r.justScored
     // Clearing every task is the headline achievement — its gold/mint treatment
@@ -334,8 +343,8 @@ export const players = computed(() => {
     const done100 = r.complete
     return {
       ...r,
-      rank: rank + 1,
-      y: rank * ROW_HEIGHT,
+      rank: sRank + 1,
+      y: i * ROW_HEIGHT,
       opacity: r.active ? 1 : 0.5,
       scoreColor: done100
         ? '#ffd970'
@@ -349,7 +358,7 @@ export const players = computed(() => {
                 ? 'var(--sa-text-6)'
                 : 'var(--sa-text-2)',
       rankFg: top ? 'var(--sa-ink)' : 'var(--sa-text-4)',
-      rankBg: top ? MEDALS[rank] : 'rgba(var(--sa-cyan-rgb),.08)',
+      rankBg: top ? MEDALS[sRank] : 'rgba(var(--sa-cyan-rgb),.08)',
       rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
       rowBg: done100
         ? 'linear-gradient(90deg,rgba(var(--sa-mint-rgb),.12),rgba(var(--sa-gold-rgb),.07))'
