@@ -869,10 +869,20 @@ export const timeline = computed(() => {
   // the data — each update shifts every bar one slot left, a clean 20-min slide.
   const buckets = Array.from(notificationHistory.value || [])
   const tlMax = Math.max(1, ...buckets)
-  const bars = buckets.map((v, i) => ({
-    h: Math.round((v / tlMax) * 100),
-    bg: i === buckets.length - 1 ? 'var(--sa-cyan)' : v === 0 ? 'rgba(var(--sa-cyan-rgb),.08)' : 'rgba(var(--sa-cyan-rgb),.45)',
-  }))
+  // Soft bars: a top-down cyan gradient per bucket, a faint stub for empty ones,
+  // and a brighter glowing bar at the leading (now) edge.
+  const bars = buckets.map((v, i) => {
+    const isNow = i === buckets.length - 1
+    return {
+      h: Math.round((v / tlMax) * 100),
+      bg: isNow
+        ? 'linear-gradient(180deg,var(--sa-cyan),rgba(var(--sa-cyan-rgb),.45))'
+        : v === 0
+          ? 'rgba(var(--sa-cyan-rgb),.1)'
+          : 'linear-gradient(180deg,rgba(var(--sa-cyan-rgb),.85),rgba(var(--sa-cyan-rgb),.22))',
+      glow: isNow ? '0 0 7px rgba(var(--sa-cyan-rgb),.75)' : 'none',
+    }
+  })
   return {
     bars,
     tlNow: buckets[buckets.length - 1] || 0,

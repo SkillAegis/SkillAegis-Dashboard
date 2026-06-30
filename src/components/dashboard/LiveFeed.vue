@@ -74,8 +74,8 @@ watch(
       <div style="display:flex;align-items:flex-end;gap:14px;">
         <span class="sa-mono" style="font-size:9px;color:var(--sa-text-6);white-space:nowrap;">-{{ timeline.windowMin }} min</span>
         <div style="flex:1;height:38px;overflow:hidden;">
-          <div :style="{ display: 'flex', alignItems: 'flex-end', height: '100%', willChange: 'transform', transform: slide, transition: sliding ? 'transform .5s ease-out' : 'none' }">
-            <div v-for="(b, i) in timeline.bars" :key="i" :style="{ flex: '1', height: b.h + '%', minHeight: '2px', background: b.bg }"></div>
+          <div :style="{ display: 'flex', alignItems: 'flex-end', gap: '1px', height: '100%', willChange: 'transform', transform: slide, transition: sliding ? 'transform .5s ease-out' : 'none' }">
+            <div v-for="(b, i) in timeline.bars" :key="i" :style="{ flex: '1', height: b.h + '%', minHeight: '2px', borderRadius: '1.5px 1.5px 0 0', background: b.bg, boxShadow: b.glow }"></div>
           </div>
         </div>
         <div style="text-align:right;min-width:54px;">
