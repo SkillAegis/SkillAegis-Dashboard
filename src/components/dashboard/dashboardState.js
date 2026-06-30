@@ -26,6 +26,9 @@ import {
   active_exercises,
   userCount,
   shouldHideGamification,
+  userAuthenticated,
+  toggleVerboseMode,
+  toggleApiQueryMode,
 } from '@/socket'
 
 /* ------------------------------------------------------------------ */
@@ -62,6 +65,24 @@ export function togglePaginate() {
 }
 export function selectExercise(index) {
   selectedExerciseIndex.value = index
+}
+
+// Live Feed options (restored from the legacy live-logs view). These are
+// server-side notification filters: the toggle mirrors its flag to the backend
+// via socket.js, and the server decides what the feed stream contains —
+// verbose shows all traffic, apiQueryOnly drops non-API requests. Both require
+// an authenticated (admin) session, so the menu gates them on `userAuthenticated`.
+export const verboseMode = ref(false)
+export const apiQueryOnly = ref(false)
+export { userAuthenticated }
+
+export function toggleVerbose() {
+  verboseMode.value = !verboseMode.value
+  toggleVerboseMode(verboseMode.value)
+}
+export function toggleApiQuery() {
+  apiQueryOnly.value = !apiQueryOnly.value
+  toggleApiQueryMode(apiQueryOnly.value)
 }
 
 export const selectedExercise = computed(() => {

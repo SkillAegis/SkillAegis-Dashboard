@@ -1,6 +1,32 @@
 <script setup>
-import { ref, reactive, watch, nextTick } from 'vue'
-import { feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared, PAYLOAD_PREVIEW_LINES } from './dashboardState.js'
+import { ref, reactive, watch, nextTick, computed, onMounted, onBeforeUnmount } from 'vue'
+import {
+  feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared, PAYLOAD_PREVIEW_LINES,
+  verboseMode, apiQueryOnly, toggleVerbose, toggleApiQuery, userAuthenticated,
+} from './dashboardState.js'
+
+// Feed options menu (hamburger) — holds the server-side feed filters and is
+// the home for future feed-scoped controls. Closes on outside-click / Escape.
+const menuRef = ref(null)
+const menuOpen = ref(false)
+const filtersActive = computed(() => verboseMode.value || apiQueryOnly.value)
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value
+}
+function onDocClick(e) {
+  if (menuOpen.value && menuRef.value && !menuRef.value.contains(e.target)) menuOpen.value = false
+}
+function onKey(e) {
+  if (e.key === 'Escape') menuOpen.value = false
+}
+onMounted(() => {
+  document.addEventListener('click', onDocClick)
+  document.addEventListener('keydown', onKey)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onKey)
+})
 
 // Per-row payload expand state, keyed by stable feed id so a row stays expanded
 // across re-renders (and the per-second relative-time ticks elsewhere).
@@ -47,6 +73,57 @@ watch(
       <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:8px;background:rgba(var(--sa-mint-rgb),.1);border:1px solid rgba(var(--sa-mint-rgb),.2);">
         <span style="font-size:11px;">🔒</span><span class="sa-mono" style="font-size:10px;color:var(--sa-text-4);">API</span>
         <span class="sa-mono" style="font-size:14px;font-weight:800;color:var(--sa-mint);">{{ apiMessages }}</span>
+      </div>
+
+      <!-- feed options menu -->
+      <div ref="menuRef" class="sa-menu-wrap">
+        <button
+          type="button"
+          class="sa-menu-btn"
+          :class="{ open: menuOpen, active: filtersActive }"
+          aria-label="Feed options"
+          :aria-expanded="menuOpen"
+          @click="toggleMenu"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          <span v-if="filtersActive" class="sa-menu-dot"></span>
+        </button>
+
+        <div v-if="menuOpen" class="sa-menu" @click.stop>
+          <div class="sa-menu-title sa-mono">FEED OPTIONS</div>
+
+          <button
+            type="button"
+            class="sa-menu-item"
+            :class="{ disabled: !userAuthenticated }"
+            :disabled="!userAuthenticated"
+            :title="!userAuthenticated ? 'Log in (admin) to change feed filters' : ''"
+            @click="toggleVerbose"
+          >
+            <span class="sa-switch" :class="{ on: verboseMode }"><span class="sa-switch-knob"></span></span>
+            <span class="sa-menu-text">
+              <span class="sa-menu-label">Verbose mode</span>
+              <span class="sa-menu-hint">Show all traffic, unfiltered</span>
+            </span>
+          </button>
+
+          <button
+            type="button"
+            class="sa-menu-item"
+            :class="{ disabled: !userAuthenticated }"
+            :disabled="!userAuthenticated"
+            :title="!userAuthenticated ? 'Log in (admin) to change feed filters' : ''"
+            @click="toggleApiQuery"
+          >
+            <span class="sa-switch sa-switch--mint" :class="{ on: apiQueryOnly }"><span class="sa-switch-knob"></span></span>
+            <span class="sa-menu-text">
+              <span class="sa-menu-label">🔒 API queries only</span>
+              <span class="sa-menu-hint">Hide non-API requests</span>
+            </span>
+          </button>
+
+          <div v-if="!userAuthenticated" class="sa-menu-foot sa-mono">Admin login required</div>
+        </div>
       </div>
     </div>
 
@@ -167,5 +244,157 @@ watch(
   outline: 1px solid var(--sa-cyan);
   outline-offset: 2px;
   border-radius: 3px;
+}
+
+/* Feed options menu (hamburger) */
+.sa-menu-wrap {
+  position: relative;
+}
+.sa-menu-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--sa-text-4);
+  background: rgba(var(--sa-cyan-rgb), 0.06);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.18);
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+.sa-menu-btn:hover,
+.sa-menu-btn.open {
+  color: var(--sa-cyan);
+  background: rgba(var(--sa-cyan-rgb), 0.12);
+  border-color: rgba(var(--sa-cyan-rgb), 0.4);
+}
+.sa-menu-btn.active {
+  color: var(--sa-cyan);
+  border-color: rgba(var(--sa-cyan-rgb), 0.4);
+}
+.sa-menu-btn:focus-visible {
+  outline: 1px solid var(--sa-cyan);
+  outline-offset: 2px;
+}
+.sa-menu-dot {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sa-mint);
+  box-shadow: 0 0 6px var(--sa-mint);
+}
+.sa-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: 246px;
+  padding: 7px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(18, 28, 46, 0.98), rgba(11, 18, 31, 0.98));
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.22);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+  animation: sa-menu-in 0.14s ease-out;
+}
+@keyframes sa-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.sa-menu-title {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  color: var(--sa-text-5);
+  padding: 4px 8px 7px;
+}
+.sa-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  text-align: left;
+  padding: 9px 8px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.sa-menu-item:hover:not(.disabled) {
+  background: rgba(var(--sa-cyan-rgb), 0.08);
+}
+.sa-menu-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.sa-menu-item:focus-visible {
+  outline: 1px solid var(--sa-cyan);
+  outline-offset: -1px;
+}
+.sa-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.sa-menu-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sa-text-2);
+}
+.sa-menu-hint {
+  font-size: 10px;
+  color: var(--sa-text-5);
+}
+.sa-menu-foot {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--sa-gold);
+  padding: 6px 8px 3px;
+  text-align: center;
+  opacity: 0.8;
+}
+/* toggle switch */
+.sa-switch {
+  flex: none;
+  position: relative;
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(var(--sa-cyan-rgb), 0.12);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.25);
+  transition: background 0.2s, border-color 0.2s;
+}
+.sa-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--sa-text-4);
+  transition: transform 0.2s, background 0.2s;
+}
+.sa-switch.on {
+  background: rgba(var(--sa-cyan-rgb), 0.35);
+  border-color: var(--sa-cyan);
+}
+.sa-switch.on .sa-switch-knob {
+  transform: translateX(16px);
+  background: var(--sa-cyan);
+}
+.sa-switch--mint.on {
+  background: rgba(var(--sa-mint-rgb), 0.35);
+  border-color: var(--sa-mint);
+}
+.sa-switch--mint.on .sa-switch-knob {
+  background: var(--sa-mint);
 }
 </style>

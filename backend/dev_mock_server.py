@@ -88,6 +88,8 @@ STATE = {
     "history": [0] * HISTORY_BUFFER,
     "notifications": [],       # newest first
     "notif_id": 0,
+    "verbose": False,          # feed filter: show all traffic (toggle_verbose_mode)
+    "apiquery": False,         # feed filter: API requests only (toggle_apiquery_mode)
 }
 
 
@@ -155,8 +157,12 @@ def build_world(n_players):
     # timeline aren't empty on first paint (the sim loop then keeps them moving).
     STATE["notifications"] = []
     STATE["notif_id"] = 0
-    for _ in range(8):
-        STATE["notifications"].insert(0, _make_notification(random.choice(STATE["users"])))
+    seeded = 0
+    while seeded < 8 and STATE["notif_id"] < 60:
+        notif = _make_notification(random.choice(STATE["users"]))
+        if _accept(notif):
+            STATE["notifications"].insert(0, notif)
+            seeded += 1
     STATE["history"] = [0] * HISTORY_BUFFER
     for i in range(len(STATE["history"]) - 24, len(STATE["history"])):
         STATE["history"][i] = random.randint(0, 4)
@@ -378,6 +384,18 @@ def _make_notification(user):
             "is_api_request": isinstance(payload, dict)}
 
 
+def _accept(notif):
+    """Server-side feed filter, mirroring the real backend's verbose / apiquery
+    modes (see backend/notification.py:is_accepted_notification). Verbose shows
+    everything; apiquery keeps only API (JSON) requests; the default hides the
+    raw non-API "noise" while keeping API requests and webhook notifications."""
+    if STATE["verbose"]:
+        return True
+    if STATE["apiquery"]:
+        return bool(notif.get("is_api_request"))
+    return notif.get("notification_origin") == "webhook" or bool(notif.get("is_api_request"))
+
+
 # ----------------------------------------------------------------------------
 # Emit helpers
 # ----------------------------------------------------------------------------
@@ -434,6 +452,8 @@ async def simulate(tick):
         for _ in range(random.randint(1, 3)):
             user = random.choice(STATE["users"])
             notif = _make_notification(user)
+            if not _accept(notif):
+                continue
             STATE["notifications"].insert(0, notif)
             del STATE["notifications"][30:]
             await sio.emit("notification", notif)
@@ -583,11 +603,13 @@ async def reload_from_disk(sid):
 
 @sio.event
 async def toggle_verbose_mode(sid, payload):
+    STATE["verbose"] = bool(payload.get("verbose"))
     return {"success": True}
 
 
 @sio.event
 async def toggle_apiquery_mode(sid, payload):
+    STATE["apiquery"] = bool(payload.get("apiquery"))
     return {"success": True}
 
 
