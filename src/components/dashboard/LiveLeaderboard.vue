@@ -131,8 +131,7 @@ onUnmounted(() => {
         minHeight: '0',
         overflowX: 'hidden',
         overflowY: autoPaginate ? 'hidden' : 'auto',
-        margin: '0 14px 0',
-        paddingTop: PAD_TOP + 'px',
+        padding: `${PAD_TOP}px 22px 0`,
       }"
     >
       <div v-if="!selectedExercise" class="sa-empty">No exercise selected — pick one in the admin panel.</div>

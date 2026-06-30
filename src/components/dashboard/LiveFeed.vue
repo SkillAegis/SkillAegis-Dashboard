@@ -102,7 +102,7 @@ watch(
       <div v-for="e in feed" :key="e.id" class="sa-rise" style="border-radius:10px;margin-bottom:6px;padding:8px 10px;" :style="{ background: e.rowBg, border: `1px solid ${e.rowBorder}` }">
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="sa-mono" style="font-size:13px;font-weight:600;color:var(--sa-text-2);width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ e.user }}</span>
-          <span class="sa-mono" style="font-size:10px;font-weight:800;letter-spacing:.5px;padding:3px 7px;border-radius:5px;width:44px;text-align:center;" :style="{ color: e.methodFg, background: e.methodBg }">{{ e.method }}</span>
+          <span class="sa-mono" style="font-size:10px;font-weight:800;letter-spacing:.5px;padding:3px 7px;border-radius:5px;min-width:44px;text-align:center;white-space:nowrap;" :style="{ color: e.methodFg, background: e.methodBg }">{{ e.method }}</span>
           <span class="sa-mono" style="font-size:12px;color:var(--sa-text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ e.url }}</span>
         </div>
         <div v-if="e.hasPayload" style="margin:7px 0 0 0;padding:7px 10px;border-radius:7px;background:rgba(var(--sa-bg-rgb),.6);border:1px solid rgba(var(--sa-cyan-rgb),.1);">

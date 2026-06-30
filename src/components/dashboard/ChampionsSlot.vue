@@ -52,7 +52,6 @@ function cycle() {
     <!-- ON FIRE -->
     <div v-if="champions.showFire" class="sa-rise">
       <div style="display:flex;align-items:center;gap:8px;">
-        <span class="sa-flame" style="font-size:16px;filter:drop-shadow(0 0 6px rgba(var(--sa-fire-rgb),.8));">🔥</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#ffb993;">ON FIRE</span>
         <span class="sa-mono sa-cap">· time spent on a scoring streak</span>
       </div>
@@ -86,7 +85,6 @@ function cycle() {
     <!-- SPEED RUNNER -->
     <div v-if="champions.showSpeed" class="sa-rise">
       <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:16px;filter:drop-shadow(0 0 6px rgba(var(--sa-cyan-rgb),.7));">⚡</span>
         <span style="font-size:12px;font-weight:700;letter-spacing:1.5px;color:#a8e6ff;">SPEED RUNNER</span>
         <span class="sa-mono sa-cap">· 10 = perfect clean-run pace</span>
       </div>

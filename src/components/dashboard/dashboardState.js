@@ -353,27 +353,21 @@ export const players = computed(() => {
       rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
       rowBg: done100
         ? 'linear-gradient(90deg,rgba(var(--sa-mint-rgb),.12),rgba(var(--sa-gold-rgb),.07))'
-        : onFire
-          ? 'rgba(var(--sa-fire-rgb),.09)'
-          : just
-            ? 'rgba(var(--sa-mint-rgb),.10)'
-            : top
-              ? 'rgba(var(--sa-gold-rgb),.06)'
-              : 'rgba(var(--sa-cyan-rgb),.03)',
+        : just
+          ? 'rgba(var(--sa-mint-rgb),.10)'
+          : top
+            ? 'rgba(var(--sa-gold-rgb),.06)'
+            : 'rgba(var(--sa-cyan-rgb),.03)',
       rowBorder: done100
         ? 'rgba(var(--sa-gold-rgb),.5)'
-        : onFire
-          ? 'rgba(var(--sa-fire-bright-rgb),.4)'
-          : top
-            ? 'rgba(var(--sa-gold-rgb),.22)'
-            : 'rgba(var(--sa-cyan-rgb),.08)',
+        : top
+          ? 'rgba(var(--sa-gold-rgb),.22)'
+          : 'rgba(var(--sa-cyan-rgb),.08)',
       glow: done100
         ? '0 0 0 1px rgba(var(--sa-gold-rgb),.4),0 0 24px rgba(var(--sa-mint-rgb),.22)'
-        : onFire
-          ? '0 0 0 1px rgba(var(--sa-fire-bright-rgb),.5),0 0 28px rgba(var(--sa-fire-rgb),.3)'
-          : just
-            ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
-            : 'none',
+        : just
+          ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
+          : 'none',
       rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
     }
   })
