@@ -261,6 +261,14 @@ row with `firstBloods` (count) + `firstBloodTasks` (1-based task numbers), colle
 `🩸` beside the name icons (a `×N` count when a player holds more than one, `firstBloodTitle()`
 tooltip listing the task numbers). `recentCompletions` / `justCleared` carry a `first` flag and
 `LiveFeed.vue` tags first-completions in the "Just Cleared" strip with a crimson `🩸 1st` pill.
+A third surface (commit `333edec`) marks the first-blood *in the grid*: a small crimson corner pip
+on the one cleared task square a player finished first (each `players` task carries a `firstBlood`
+flag; `.sa-task-firstblood` in `LiveLeaderboard.vue`). It is sparse — exactly one per task column —
+so a trainer can scan a column to see who drew first blood there; it echoes the legacy
+`TheScoreTable.vue` `faCircleCheck` cue but stays subtle to suit the compact square grid. (Cleared
+players' squares fuse into the clear bar, so the pip shows for non-finishers; the name-line badge
+still covers finishers.)
+
 Because both are recomputed from current `progresses`, the badge self-corrects when a first-blood
 task is un-marked and re-completed (verified: the badge moved from the earliest to the next
 earliest completer). Mock: `dev_mock_server.py::build_progress` now stamps `first_completion` on
