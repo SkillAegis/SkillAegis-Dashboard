@@ -35,6 +35,12 @@ function checkingTask(player, task) {
   return task.avail && userTaskCheckInProgress.value[`${player.id}_${task.uuid}`] === true
 }
 
+// First blood — this player was the earliest to clear these task numbers.
+function firstBloodTitle(p) {
+  const t = p.firstBloodTasks
+  return `First blood — first to clear ${t.length === 1 ? `task ${t[0]}` : `tasks ${t.join(', ')}`}`
+}
+
 // A cleared row shows the fused clear bar for everyone; a logged-in admin
 // hovering the row swaps it back to the clickable per-task squares so they can
 // still toggle completion.
@@ -205,6 +211,7 @@ onUnmounted(() => {
               <div style="display:flex;align-items:center;gap:7px;min-width:0;">
                 <span v-if="p.complete" class="sa-medal" title="Cleared every task">🏅</span>
                 <span v-if="p.isFire" class="sa-flame" style="font-size:15px;line-height:1;filter:drop-shadow(0 0 5px rgba(var(--sa-fire-rgb),.8));">🔥</span>
+                <span v-if="p.firstBloods" class="sa-firstblood" :title="firstBloodTitle(p)">🩸<span v-if="p.firstBloods > 1" class="sa-firstblood-count sa-mono">{{ p.firstBloods }}</span></span>
                 <div style="min-width:0;flex:1;">
                   <div style="font-weight:600;font-size:15px;color:var(--sa-text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.1;">{{ p.name }}</div>
                   <div class="sa-mono" style="font-size:9px;color:var(--sa-text-5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ p.org }}</div>
@@ -341,6 +348,22 @@ onUnmounted(() => {
   font-size: 15px;
   line-height: 1;
   filter: drop-shadow(0 0 5px rgba(var(--sa-gold-rgb), 0.8));
+}
+/* first blood: a crimson-lit drop by the name, with a small ×N when a player
+   holds more than one first-clear */
+.sa-firstblood {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  font-size: 14px;
+  line-height: 1;
+  filter: drop-shadow(0 0 5px rgba(var(--sa-danger-rgb), 0.7));
+}
+.sa-firstblood-count {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--sa-danger);
+  margin-left: 1px;
 }
 .sa-cleared-pill {
   flex: 1;

@@ -299,9 +299,14 @@ export const players = computed(() => {
       const heatSrc = userActivity.value?.[p.user_id] || []
       const heat = heatSrc.map((v) => ({ bg: heatColor(v) }))
 
-      const tasks = ex.tasks.map((task) => {
+      // First blood — the earliest completer of a task (flagged by the backend
+      // on the completion entry). Collected here from the same `tc` already
+      // iterated, so the badge costs no extra pass.
+      const firstBloodTasks = []
+      const tasks = ex.tasks.map((task, ti) => {
         const completion = tc[task.uuid]
         const isDone = completion !== undefined && completion !== false
+        if (isDone && completion.first_completion === true) firstBloodTasks.push(ti + 1)
         const avail = !isDone && taskRequirementMet(tc, task)
         return {
           uuid: task.uuid,
@@ -336,6 +341,8 @@ export const players = computed(() => {
         complete,
         justCompleted,
         gain: g?.gain ?? 0,
+        firstBloods: firstBloodTasks.length,
+        firstBloodTasks,
         heat,
         tasks,
       }
@@ -588,7 +595,7 @@ const recentCompletions = computed(() => {
     if (!tc) continue
     for (const [taskUuid, c] of Object.entries(tc)) {
       if (!c || c === false || !c.timestamp) continue
-      items.push({ user_id: p.user_id, email: p.email, taskUuid, at: c.timestamp * 1000 })
+      items.push({ user_id: p.user_id, email: p.email, taskUuid, at: c.timestamp * 1000, first: c.first_completion === true })
     }
   }
   items.sort((a, b) => b.at - a.at)
@@ -601,6 +608,7 @@ const recentCompletions = computed(() => {
       name,
       org,
       at: it.at,
+      first: it.first,
     }
   })
 })
@@ -616,6 +624,7 @@ export const justCleared = computed(() => {
     name: it.name,
     taskName: it.taskName,
     taskNum: it.taskNum,
+    first: it.first,
     ago: fmtAgo(nowMs - it.at),
     top: i === 0,
   }))

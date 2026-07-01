@@ -151,6 +151,7 @@ watch(
           <span style="flex:none;width:6px;height:6px;border-radius:50%;" :style="{ background: c.top ? 'var(--sa-violet)' : 'rgba(var(--sa-violet-rgb),.4)', boxShadow: c.top ? '0 0 6px rgba(var(--sa-violet-rgb),.7)' : 'none' }"></span>
           <span style="font-size:12px;font-weight:600;flex:none;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#fff' : '#d8d0ea' }">{{ c.name }}</span>
           <span v-if="c.taskNum" class="sa-mono" style="flex:none;font-size:10px;font-weight:700;min-width:20px;text-align:center;padding:1px 5px;border-radius:5px;color:#c5b3ee;background:rgba(var(--sa-violet-rgb),.16);border:1px solid rgba(var(--sa-violet-rgb),.32);" title="Task number">{{ c.taskNum }}</span>
+          <span v-if="c.first" class="sa-mono sa-firstblood-tag" title="First blood — first to clear this task">🩸 1st</span>
           <span style="font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#c5b3ee' : '#9d8fc4' }">{{ c.taskName }}</span>
           <span class="sa-mono" style="font-size:11px;font-weight:700;flex:none;" :style="{ color: c.top ? 'var(--sa-violet)' : '#b9a6e6' }" title="Time since completion">{{ c.ago }}</span>
         </div>
@@ -265,6 +266,19 @@ watch(
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 1px;
+}
+/* first-blood flag on a Just Cleared entry — crimson, echoing the leaderboard
+   badge, so a first clear stands out in the violet stream */
+.sa-firstblood-tag {
+  flex: none;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  color: #ffd0d0;
+  background: rgba(var(--sa-danger-rgb), 0.18);
+  border: 1px solid rgba(var(--sa-danger-rgb), 0.4);
 }
 .sa-payload-toggle {
   display: inline-block;

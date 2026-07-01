@@ -314,6 +314,21 @@ def build_progress():
             held.setdefault(w["user_id"], []).append(t["metadata"])
 
     selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
+
+    # Earliest completer per (exercise, task index) — mirrors
+    # exercise.py::mark_task_completed's first_completion bookkeeping so the
+    # dashboard's first-blood badge lights up on the true earliest clearer.
+    first_by_task = {}
+    for ex in selected:
+        for ti in range(len(ex["tasks"])):
+            best_uid, best_ts = None, None
+            for u in STATE["users"]:
+                done = STATE["done"][u["user_id"]][ex["uuid"]]
+                if ti in done and (best_ts is None or done[ti] < best_ts):
+                    best_ts, best_uid = done[ti], u["user_id"]
+            if best_uid is not None:
+                first_by_task[(ex["uuid"], ti)] = best_uid
+
     progress = {}
     for u in STATE["users"]:
         uid, email = u["user_id"], u["email"]
@@ -324,7 +339,7 @@ def build_progress():
             for ti, task in enumerate(ex["tasks"]):
                 if ti in done:
                     tc[task["uuid"]] = {"user_id": uid, "timestamp": done[ti],
-                                        "first_completion": False}
+                                        "first_completion": first_by_task.get((ex["uuid"], ti)) == uid}
                 else:
                     tc[task["uuid"]] = False
             exercises[ex["uuid"]] = {
