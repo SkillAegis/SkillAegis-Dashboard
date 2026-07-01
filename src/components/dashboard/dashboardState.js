@@ -306,13 +306,15 @@ export const players = computed(() => {
       const tasks = ex.tasks.map((task, ti) => {
         const completion = tc[task.uuid]
         const isDone = completion !== undefined && completion !== false
-        if (isDone && completion.first_completion === true) firstBloodTasks.push(ti + 1)
+        const firstBlood = isDone && completion.first_completion === true
+        if (firstBlood) firstBloodTasks.push(ti + 1)
         const avail = !isDone && taskRequirementMet(tc, task)
         return {
           uuid: task.uuid,
           name: task.name,
           done: isDone,
           avail,
+          firstBlood,
           bg: isDone
             ? 'linear-gradient(180deg,var(--sa-cyan),var(--sa-mint))'
             : avail

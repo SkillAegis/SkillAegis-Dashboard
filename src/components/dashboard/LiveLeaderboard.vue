@@ -245,6 +245,7 @@ onUnmounted(() => {
                 >
                   <span v-if="checkingTask(p, t)" class="sa-task-spin" title="Being validated…"></span>
                   <span v-else-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--sa-cyan);"></span>
+                  <span v-if="t.firstBlood" class="sa-task-firstblood" title="First blood — first to clear this task"></span>
                 </div>
               </div>
             </div>
@@ -329,6 +330,19 @@ onUnmounted(() => {
   to {
     transform: rotate(360deg);
   }
+}
+/* first blood in-cell: a small crimson corner pip on the one done square a
+   player cleared first — sparse (one per task column), echoing the name-line
+   🩸 badge. The thin dark ring lifts it off the bright cleared gradient. */
+.sa-task-firstblood {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sa-danger);
+  box-shadow: 0 0 5px rgba(var(--sa-danger-rgb), 0.9), 0 0 0 1px rgba(9, 15, 26, 0.4);
 }
 .sa-empty {
   position: absolute;
