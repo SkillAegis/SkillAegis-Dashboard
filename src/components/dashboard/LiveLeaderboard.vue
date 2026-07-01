@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { registerTimerCallback, unregisterTimerCallback } from '@/utils.js'
-import { userAuthenticated, setCompletedState } from '@/socket'
+import { userAuthenticated, setCompletedState, userTaskCheckInProgress } from '@/socket'
 import CompletionBurst from './CompletionBurst.vue'
 import {
   players,
@@ -24,6 +24,15 @@ function toggleTask(player, task) {
   if (!userAuthenticated.value || !selectedExercise.value) return
   // setCompletedState toggles based on the current completion state (task.done).
   setCompletedState(task.done, player.id, selectedExercise.value.uuid, task.uuid)
+}
+
+// "Being validated" — the backend re-checks a trainee's injects when they act
+// and emits user_task_check_in_progress (true for ~3s, keyed user_id_inject).
+// Read it here rather than in the players view-model so these bursty, self-
+// resetting events never trigger a leaderboard rebuild. Only available squares
+// spin — completed and locked squares are left alone.
+function checkingTask(player, task) {
+  return task.avail && userTaskCheckInProgress.value[`${player.id}_${task.uuid}`] === true
 }
 
 // A cleared row shows the fused clear bar for everyone; a logged-in admin
@@ -227,7 +236,8 @@ onUnmounted(() => {
                   :style="{ background: t.bg, border: `1px solid ${t.border}`, boxShadow: t.glow }"
                   @click="toggleTask(p, t)"
                 >
-                  <span v-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--sa-cyan);"></span>
+                  <span v-if="checkingTask(p, t)" class="sa-task-spin" title="Being validated…"></span>
+                  <span v-else-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--sa-cyan);"></span>
                 </div>
               </div>
             </div>
@@ -291,6 +301,27 @@ onUnmounted(() => {
 .sa-task.clickable:hover {
   filter: brightness(1.35);
   transform: scaleY(1.18);
+}
+/* "Being validated" — a small spinning arc that replaces the availability dot
+   while the backend is re-checking this task. Under prefers-reduced-motion the
+   global rule (main.css) freezes the spin, leaving a static ring as the cue. */
+.sa-task-spin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--sa-cyan-rgb), 0.25);
+  border-top-color: var(--sa-cyan);
+  box-shadow: 0 0 6px rgba(var(--sa-cyan-rgb), 0.5);
+  animation: sa-spin 0.7s linear infinite;
+}
+@keyframes sa-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .sa-empty {
   position: absolute;

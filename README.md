@@ -98,7 +98,8 @@ viewer. Other flags: `--players N`, `--tick S`, `--port P`, `--no-sim` (start fr
 To force a headline state without the admin panel, POST to the dev-only controls — e.g.
 `curl -X POST http://localhost:4001/mock/clear/1` makes player 1 clear everything (the all-clear
 burst). Available: `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
-`clear/<user_id>`, `empty` (wipe the board), `reset` (rebuild the world).
+`clear/<user_id>`, `checking/<user_id>` (fire a "being validated" pulse on a player's next
+available task — drives the per-task spinner), `empty` (wipe the board), `reset` (rebuild the world).
 
 This is a UI harness only — it does not run the evaluation engine. See
 [`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).

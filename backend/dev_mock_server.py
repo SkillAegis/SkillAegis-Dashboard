@@ -16,6 +16,8 @@ headline states for inspection or screenshots:
     (``--no-sim`` starts paused); the board stays served, just stops moving,
   * ``/mock/clear`` — every player clears every selected task (full board),
   * ``/mock/clear/<user_id>`` — one player clears (drives the all-clear burst),
+  * ``/mock/checking/<user_id>`` — fire a "being validated" pulse on that
+    player's next available task (drives the per-task spinner),
   * ``/mock/empty`` — wipe all progress to a fresh board,
   * ``/mock/reset`` — rebuild the synthetic world from scratch.
 
@@ -448,6 +450,19 @@ async def simulate(tick):
             _ignite(uid, now)
             STATE["activity"][uid][-1] += len(list(burst))
 
+        # "Being validated" pulses: mirror the real backend re-checking a
+        # trainee's injects after they act. Fire on a few players' next
+        # available task so the leaderboard's per-task spinner is alive.
+        checkers = [u for u in movers]
+        random.shuffle(checkers)
+        for u in checkers[: random.randint(1, 3)]:
+            uid = u["user_id"]
+            done = STATE["done"][uid][ex0_uuid]
+            nxt = next((ti for ti in range(n_tasks) if ti not in done), None)
+            if nxt is not None:
+                await sio.emit("user_task_check_in_progress",
+                               {"user_id": uid, "inject_uuid": ex0["tasks"][nxt]["uuid"]})
+
         # a few feed events each tick, from active-ish users
         for _ in range(random.randint(1, 3)):
             user = random.choice(STATE["users"])
@@ -657,8 +672,8 @@ async def index(request):
         "authenticated": STATE["authenticated"],
         "paused": STATE["paused"],
         "controls": ["POST /mock/pause", "POST /mock/resume", "POST /mock/clear",
-                     "POST /mock/clear/<user_id>", "POST /mock/empty",
-                     "POST /mock/reset"],
+                     "POST /mock/clear/<user_id>", "POST /mock/checking/<user_id>",
+                     "POST /mock/empty", "POST /mock/reset"],
     })
 
 
@@ -691,6 +706,31 @@ async def mock_clear_user(request):
     _clear_user(uid)
     await emit_all()
     return web.json_response({"success": True, "cleared": uid})
+
+
+async def mock_checking_user(request):
+    try:
+        uid = int(request.match_info["user_id"])
+    except ValueError:
+        return web.json_response({"success": False, "error": "user_id must be an int"},
+                                 status=400)
+    if uid not in STATE["done"]:
+        return web.json_response({"success": False, "error": f"no user {uid}"}, status=404)
+    # Fire a check pulse on this player's next available task in each selected
+    # exercise, so the "being validated" spinner can be forced for a screenshot
+    # regardless of which scenario tab is showing.
+    fired = []
+    for ex in STATE["exercises"]:
+        if ex["uuid"] not in STATE["selected"]:
+            continue
+        done = STATE["done"][uid][ex["uuid"]]
+        nxt = next((ti for ti in range(len(ex["tasks"])) if ti not in done), None)
+        if nxt is not None:
+            task_uuid = ex["tasks"][nxt]["uuid"]
+            await sio.emit("user_task_check_in_progress",
+                           {"user_id": uid, "inject_uuid": task_uuid})
+            fired.append(task_uuid)
+    return web.json_response({"success": True, "checking": uid, "tasks": fired})
 
 
 async def mock_empty(request):
@@ -740,6 +780,7 @@ def main():
     app.router.add_post("/mock/resume", mock_resume)
     app.router.add_post("/mock/clear", mock_clear_all)
     app.router.add_post("/mock/clear/{user_id}", mock_clear_user)
+    app.router.add_post("/mock/checking/{user_id}", mock_checking_user)
     app.router.add_post("/mock/empty", mock_empty)
     app.router.add_post("/mock/reset", mock_reset)
     app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)
@@ -754,7 +795,7 @@ def main():
           f"{', PAUSED' if STATE['paused'] else ''})")
     print("Point `npm run dev` (http://localhost:5173) at it — it already targets :4001.")
     print(f"Controls: curl -X POST http://localhost:{args.port}/mock/"
-          "{pause,resume,clear,clear/<id>,empty,reset}")
+          "{pause,resume,clear,clear/<id>,checking/<id>,empty,reset}")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 

@@ -37,7 +37,9 @@ server, but with synthetic, animated data so the board is alive the moment you l
 - On-demand scenario controls (force a headline state without the admin panel) —
   `curl -X POST http://localhost:4001/mock/<cmd>` where `<cmd>` is
   `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
-  `clear/<user_id>` (one player clears — drives the all-clear burst), `empty` (wipe the board),
+  `clear/<user_id>` (one player clears — drives the all-clear burst),
+  `checking/<user_id>` (fire a "being validated" pulse on a player's next available
+  task — drives the per-task spinner), `empty` (wipe the board),
   or `reset` (rebuild the world). `GET /` reports the paused flag and lists the controls.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
   real backend (`--zmq_log_file` replays a recorded session). See `docs/PRD-ui-testing.md`.
