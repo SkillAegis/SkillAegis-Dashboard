@@ -155,7 +155,7 @@ is reachable today. Add controls to exercise the other two:
 - Stopping the mock → dot turns red "OFFLINE"; reconnecting restores mint.
 - No new backend events; reads only `socketConnected` + `zmqLastTime`.
 
-**Status: ✅ Done (verified via mock — commit `<pending>`).** `dashboardState.js` gains a
+**Status: ✅ Done (verified via mock — commit `be9f66b`).** `dashboardState.js` gains a
 `connectionHealth` computed (O(1), ticks on the shared `now`): LIVE when `socketConnected` and the
 last ZMQ message is `< STALE_SEC` (20s) old, amber IDLE ("NO LIVE DATA") when connected but no data
 yet or gone quiet ≥ `STALE_SEC`, red OFFLINE when the socket is down. `LiveFeed.vue`'s hardcoded
