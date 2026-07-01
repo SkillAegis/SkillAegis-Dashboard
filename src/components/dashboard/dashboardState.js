@@ -418,6 +418,50 @@ export const players = computed(() => {
 export const taskLabels = computed(() => (selectedExercise.value?.tasks || []).map((t) => t.name))
 
 /* ------------------------------------------------------------------ */
+/* Per-task completion — the class-wide "which task is the wall?"      */
+/* ------------------------------------------------------------------ */
+// For the selected exercise, the fraction of participants who have cleared each
+// task. Derived from `progresses` only (no `now`), so it recomputes on data
+// change, not per tick. Bar height = cleared fraction; colour ramps by
+// difficulty — low completion (the wall) is red/amber, high is mint.
+function completionTier(frac) {
+  if (frac >= 0.66) return { rgb: 'var(--sa-mint-rgb)', solid: 'var(--sa-mint)' }
+  if (frac >= 0.33) return { rgb: 'var(--sa-gold-rgb)', solid: 'var(--sa-gold)' }
+  return { rgb: 'var(--sa-danger-rgb)', solid: 'var(--sa-danger)' }
+}
+
+export const taskCompletion = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return { tasks: [], participants: 0 }
+  const participants = Object.values(progresses.value).filter(
+    (p) => p.exercises?.[ex.uuid] !== undefined
+  )
+  const n = participants.length
+  const tasks = ex.tasks.map((task, i) => {
+    let cleared = 0
+    for (const p of participants) {
+      const c = p.exercises[ex.uuid].tasks_completion?.[task.uuid]
+      if (c !== undefined && c !== false) cleared++
+    }
+    const frac = n > 0 ? cleared / n : 0
+    const pct = Math.round(frac * 100)
+    const tier = completionTier(frac)
+    return {
+      num: i + 1,
+      name: task.name,
+      cleared,
+      total: n,
+      pct,
+      fg: tier.solid,
+      barBg: `linear-gradient(180deg, ${tier.solid}, rgba(${tier.rgb}, .3))`,
+      glow: `0 0 7px rgba(${tier.rgb}, .4)`,
+      title: `${task.name} — ${cleared} / ${n} cleared (${pct}%)`,
+    }
+  })
+  return { tasks, participants: n }
+})
+
+/* ------------------------------------------------------------------ */
 /* Global progress footer                                             */
 /* ------------------------------------------------------------------ */
 export const globalProgress = computed(() => {

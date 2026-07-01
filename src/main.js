@@ -1,5 +1,4 @@
 import './assets/main.css'
-import VueApexCharts from 'vue3-apexcharts'
 
 import { createApp, ref } from 'vue'
 import App from './App.vue'
@@ -16,6 +15,5 @@ app.component('FontAwesomeIcon', FontAwesomeIcon)
 app.component('Modal', Modal)
 app.component('Loading', Loading)
 app.component('Alert', Alert)
-app.use(VueApexCharts)
 
 app.mount('#app')

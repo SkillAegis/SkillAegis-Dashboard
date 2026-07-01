@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { registerTimerCallback, unregisterTimerCallback } from '@/utils.js'
 import { userAuthenticated, setCompletedState, userTaskCheckInProgress } from '@/socket'
 import CompletionBurst from './CompletionBurst.vue'
+import TaskCompletionChart from './TaskCompletionChart.vue'
 import {
   players,
   taskLabels,
@@ -271,6 +272,11 @@ onUnmounted(() => {
         </div>
       </div>
     </div>
+
+    <!-- per-task completion band: class-wide "which task is the wall", always
+         visible (independent of the gamification rail) directly above the
+         global-progress footer -->
+    <TaskCompletionChart />
 
     <!-- global progress footer -->
     <div style="display:flex;align-items:center;gap:22px;padding:9px 22px;border-top:1px solid rgba(var(--sa-cyan-rgb),.12);background:rgba(var(--sa-bg-rgb),.5);">
