@@ -101,7 +101,7 @@ screenshot.
 - With `prefers-reduced-motion`, the indicator degrades to a static/opacity cue, not a spin.
 - Visible via the mock (`/mock/checking/<id>`), no real backend.
 
-**Status: ✅ Done (verified via mock, commit pending).** `LiveLeaderboard.vue` reads
+**Status: ✅ Done (verified via mock — commit `60aa0ab`).** `LiveLeaderboard.vue` reads
 `userTaskCheckInProgress[`${p.id}_${t.uuid}`]` per available square via a `checkingTask()` helper
 (kept out of the `players` view-model, as specified) and renders a `.sa-task-spin` cyan arc
 (`@keyframes sa-spin`) in place of the `sa-blink` availability dot while checking. Completed/locked
