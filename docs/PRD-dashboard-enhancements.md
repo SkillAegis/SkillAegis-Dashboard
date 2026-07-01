@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — items 1, 2 & 4 done (verified via mock), 3 remaining |
+| **Status** | In progress — items 1, 2, 3 & 4 done (verified via mock); 5 & 6 remaining |
 | **Date** | 2026-07-01 |
 | **Scope** | Six additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
@@ -41,7 +41,7 @@ rendering refactor and is the only large, higher-risk item.
 |---|------|--------|------|--------|
 | 1 | Restore per-task "being validated" spinner | Small | Low | ✅ Done |
 | 2 | Connection / data-freshness diode (Live Feed) | Small–Med | Low | ✅ Done |
-| 3 | Task-completion bar chart | Medium | Low | ☐ Planned |
+| 3 | Task-completion bar chart | Medium | Low | ✅ Done |
 | 4 | First-blood badge | Small–Med | Low | ✅ Done |
 | 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ☐ Planned |
 | 6 | Performance at scale | Large | Med | ☐ Planned — see discussion |
@@ -212,6 +212,23 @@ optional `src/main.js` cleanup (drop unused apexcharts).
 - Updates live as players complete tasks; switches with the exercise tabs.
 - Remains visible when gamification is hidden.
 - Legible for both small (≤12) and large (>12) task counts.
+
+**Status: ✅ Done (verified via mock — commit `25234f6`).** `dashboardState.js` gains a
+`taskCompletion` computed: for the selected exercise it counts, per task, the participants with a
+truthy `tasks_completion[task.uuid]` over the number with that exercise, and stamps a
+difficulty-ramped colour (≥66% mint → ≥33% gold → red for the wall). It reads `progresses` only
+(no `now`), so it recomputes on data change, not per tick — deliberately kept off the per-second
+`players` hot path (the item-6 concern). A new `TaskCompletionChart.vue` renders hand-rolled
+`<div>` bars (no chart lib) as a slim "TASK COMPLETION" band wired into `LiveLeaderboard.vue`
+directly above the global-progress footer — so it lives in the leaderboard column and stays visible
+when `shouldHideGamification` strips the rail's Hall of Fame + Champions. The band mirrors the
+leaderboard's column widths so each bar sits under its task column; per-bar tooltips read
+"task name — X / N cleared (Y%)"; it reuses the `>12` numbered-header threshold to thin the per-bar
+numbers; and a right-hand "HARDEST Task N · Y%" callout names the least-cleared pending task (the
+"what to explain next" signal). Switching the exercise tabs swaps the bars (verified: 8-task drill →
+5-task attribution scenario, whose prerequisite chain shows the mint→gold decay). No mock changes
+were needed. Cleanup: dropped the unused `vue3-apexcharts` import from `main.js` (shrinks the bundle;
+the dep is still in `package.json`).
 
 ---
 
