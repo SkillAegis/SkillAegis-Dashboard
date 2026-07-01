@@ -140,6 +140,7 @@ watch(
         <div v-for="c in justCleared" :key="c.id" class="sa-rise" style="display:flex;align-items:center;gap:9px;">
           <span style="flex:none;width:6px;height:6px;border-radius:50%;" :style="{ background: c.top ? 'var(--sa-violet)' : 'rgba(var(--sa-violet-rgb),.4)', boxShadow: c.top ? '0 0 6px rgba(var(--sa-violet-rgb),.7)' : 'none' }"></span>
           <span style="font-size:12px;font-weight:600;flex:none;width:84px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#fff' : '#d8d0ea' }">{{ c.name }}</span>
+          <span v-if="c.taskNum" class="sa-mono" style="flex:none;font-size:10px;font-weight:700;min-width:20px;text-align:center;padding:1px 5px;border-radius:5px;color:#c5b3ee;background:rgba(var(--sa-violet-rgb),.16);border:1px solid rgba(var(--sa-violet-rgb),.32);" title="Task number">{{ c.taskNum }}</span>
           <span style="font-size:12px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" :style="{ color: c.top ? '#c5b3ee' : '#9d8fc4' }">{{ c.taskName }}</span>
           <span class="sa-mono" style="font-size:11px;font-weight:700;flex:none;" :style="{ color: c.top ? 'var(--sa-violet)' : '#b9a6e6' }" title="Time since completion">{{ c.ago }}</span>
         </div>

@@ -545,8 +545,13 @@ export const finishers = computed(() => {
 const recentCompletions = computed(() => {
   const ex = selectedExercise.value
   if (!ex) return []
+  // Task name + 1-based position (matches the numbered leaderboard headers).
   const taskName = {}
-  for (const t of ex.tasks) taskName[t.uuid] = t.name
+  const taskNum = {}
+  ex.tasks.forEach((t, i) => {
+    taskName[t.uuid] = t.name
+    taskNum[t.uuid] = i + 1
+  })
 
   const items = []
   for (const p of Object.values(progresses.value)) {
@@ -563,6 +568,7 @@ const recentCompletions = computed(() => {
     return {
       id: `${it.user_id}|${it.taskUuid}`,
       taskName: taskName[it.taskUuid] || '—',
+      taskNum: taskNum[it.taskUuid] || null,
       name,
       org,
       at: it.at,
@@ -580,6 +586,7 @@ export const justCleared = computed(() => {
     id: it.id,
     name: it.name,
     taskName: it.taskName,
+    taskNum: it.taskNum,
     ago: fmtAgo(nowMs - it.at),
     top: i === 0,
   }))

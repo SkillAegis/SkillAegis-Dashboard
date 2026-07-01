@@ -13,6 +13,12 @@ import {
   ROW_HEIGHT,
 } from './dashboardState.js'
 
+// Above this task count the per-task text labels below overlap into an
+// unreadable band, so the header switches to compact task numbers instead.
+// Smaller scenarios keep the descriptive labels.
+const NUMBERED_HEADER_THRESHOLD = 12
+const useNumberedHeaders = computed(() => taskLabels.value.length > NUMBERED_HEADER_THRESHOLD)
+
 // Admin-only: click a task square to mark it completed / incomplete for that user.
 function toggleTask(player, task) {
   if (!userAuthenticated.value || !selectedExercise.value) return
@@ -109,7 +115,10 @@ onUnmounted(() => {
     <div style="display:flex;align-items:flex-end;gap:14px;padding:0 22px 9px;border-bottom:1px solid rgba(var(--sa-cyan-rgb),.1);">
       <div class="sa-mono" style="width:46px;text-align:center;font-size:11px;color:var(--sa-text-6);">#</div>
       <div class="sa-mono" style="width:236px;font-size:11px;letter-spacing:1px;color:var(--sa-text-6);">PARTICIPANT · ACTIVITY</div>
-      <div style="flex:1;display:flex;gap:6px;">
+      <!-- Task-label header: descriptive names for normal scenarios; once there
+           are enough tasks that names would overlap, compact task numbers (every
+           5th emphasised) with the full name still available on hover. -->
+      <div v-if="!useNumberedHeaders" style="flex:1;display:flex;gap:6px;">
         <div
           v-for="(t, i) in taskLabels"
           :key="i"
@@ -117,6 +126,16 @@ onUnmounted(() => {
           style="flex:1;text-align:center;font-size:10px;line-height:1.15;color:var(--sa-text-6);letter-spacing:.3px;height:26px;display:flex;align-items:flex-end;justify-content:center;overflow:hidden;"
           :title="t"
         >{{ t }}</div>
+      </div>
+      <div v-else style="flex:1;display:flex;gap:5px;">
+        <div
+          v-for="(t, i) in taskLabels"
+          :key="i"
+          class="sa-mono"
+          style="flex:1;text-align:center;font-size:11px;height:26px;display:flex;align-items:flex-end;justify-content:center;"
+          :style="{ color: (i + 1) % 5 === 0 ? 'var(--sa-cyan)' : 'var(--sa-text-6)', fontWeight: (i + 1) % 5 === 0 ? 700 : 400 }"
+          :title="t"
+        >{{ i + 1 }}</div>
       </div>
       <div class="sa-mono" style="width:150px;text-align:center;font-size:11px;color:var(--sa-text-6);letter-spacing:1px;">PROGRESS</div>
       <div class="sa-mono" style="width:78px;text-align:right;font-size:11px;color:var(--sa-text-6);letter-spacing:1px;">SCORE</div>
