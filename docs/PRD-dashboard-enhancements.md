@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — items 1 & 2 done (verified via mock), 4 remaining |
+| **Status** | In progress — items 1, 2 & 4 done (verified via mock), 3 remaining |
 | **Date** | 2026-07-01 |
 | **Scope** | Six additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
@@ -42,7 +42,7 @@ rendering refactor and is the only large, higher-risk item.
 | 1 | Restore per-task "being validated" spinner | Small | Low | ✅ Done |
 | 2 | Connection / data-freshness diode (Live Feed) | Small–Med | Low | ✅ Done |
 | 3 | Task-completion bar chart | Medium | Low | ☐ Planned |
-| 4 | First-blood badge | Small–Med | Low | ☐ Planned |
+| 4 | First-blood badge | Small–Med | Low | ✅ Done |
 | 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ☐ Planned |
 | 6 | Performance at scale | Large | Med | ☐ Planned — see discussion |
 
@@ -253,6 +253,20 @@ task (mirroring `mark_task_completed`), so at least a few players hold first-blo
 - The "Just Cleared" strip flags first-completions.
 - Marking a first-blood task incomplete then re-completing moves the badge correctly.
 - Visible via the mock with no real backend.
+
+**Status: ✅ Done (verified via mock — commit `a3eef1a`).** Both surfaces read the existing
+`tasks_completion[...].first_completion` client-side. `dashboardState.js` extends each `players`
+row with `firstBloods` (count) + `firstBloodTasks` (1-based task numbers), collected in the same
+`tc` pass already run per row (no extra iteration); `LiveLeaderboard.vue` renders a crimson-lit
+`🩸` beside the name icons (a `×N` count when a player holds more than one, `firstBloodTitle()`
+tooltip listing the task numbers). `recentCompletions` / `justCleared` carry a `first` flag and
+`LiveFeed.vue` tags first-completions in the "Just Cleared" strip with a crimson `🩸 1st` pill.
+Because both are recomputed from current `progresses`, the badge self-corrects when a first-blood
+task is un-marked and re-completed (verified: the badge moved from the earliest to the next
+earliest completer). Mock: `dev_mock_server.py::build_progress` now stamps `first_completion` on
+the earliest completer of each task (mirroring `exercise.py::mark_task_completed`) instead of a
+hardcoded `False`, so several players hold first-bloods on first paint — no new mock endpoint
+needed. The optional toast / first-blood pop stretch was skipped (kept the change tight).
 
 ---
 
