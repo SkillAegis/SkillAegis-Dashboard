@@ -19,7 +19,10 @@ headline states for inspection or screenshots:
   * ``/mock/checking/<user_id>`` — fire a "being validated" pulse on that
     player's next available task (drives the per-task spinner),
   * ``/mock/empty`` — wipe all progress to a fresh board,
-  * ``/mock/reset`` — rebuild the synthetic world from scratch.
+  * ``/mock/reset`` — rebuild the synthetic world from scratch,
+  * ``/mock/zmq-stale`` · ``/mock/zmq-fresh`` — freeze / resume the reported ZMQ
+    time (drives the Live Feed freshness light amber "NO LIVE DATA"; stopping
+    the server drops the socket → red "OFFLINE").
 
 What it drives, on a timer, so the board is alive the moment you load it:
   * a full board of N players with scores ticking up and rows re-sorting
@@ -92,7 +95,18 @@ STATE = {
     "notif_id": 0,
     "verbose": False,          # feed filter: show all traffic (toggle_verbose_mode)
     "apiquery": False,         # feed filter: API requests only (toggle_apiquery_mode)
+    "zmq_frozen_at": None,     # if set, keep_alive reports this frozen epoch sec
+                               # (drives the client's amber "no live data" light)
 }
+
+
+def _zmq_last_time():
+    """Epoch seconds reported in `keep_alive.zmq_last_time`. Normally wall-clock
+    (fresh data every emit → client light stays LIVE); /mock/zmq-stale freezes it
+    at a past moment so the age crosses the client's staleness threshold → amber,
+    and /mock/zmq-fresh resumes live tracking."""
+    frozen = STATE["zmq_frozen_at"]
+    return frozen if frozen is not None else int(time.time())
 
 
 def _uuid(prefix, n):
@@ -415,7 +429,7 @@ async def emit_all(to=None):
         "config": {"buffer_resolution_per_minute": 12, "buffer_timestamp_min": 10,
                    "frequency": 5, "notification_history_size": HISTORY_BUFFER},
     }, to=to)
-    await sio.emit("keep_alive", {"zmq_last_time": int(time.time())}, to=to)
+    await sio.emit("keep_alive", {"zmq_last_time": _zmq_last_time()}, to=to)
 
 
 # ----------------------------------------------------------------------------
@@ -427,7 +441,7 @@ async def simulate(tick):
         if STATE["paused"]:
             # Frozen for inspection/screenshots: keep the connection fresh but
             # don't mutate scores, feed or buffers.
-            await sio.emit("keep_alive", {"zmq_last_time": int(time.time())})
+            await sio.emit("keep_alive", {"zmq_last_time": _zmq_last_time()})
             continue
         now = time.time()
         ex0 = STATE["exercises"][0]
@@ -673,7 +687,8 @@ async def index(request):
         "paused": STATE["paused"],
         "controls": ["POST /mock/pause", "POST /mock/resume", "POST /mock/clear",
                      "POST /mock/clear/<user_id>", "POST /mock/checking/<user_id>",
-                     "POST /mock/empty", "POST /mock/reset"],
+                     "POST /mock/empty", "POST /mock/reset",
+                     "POST /mock/zmq-stale", "POST /mock/zmq-fresh"],
     })
 
 
@@ -748,6 +763,21 @@ async def mock_reset(request):
     return web.json_response({"success": True, "reset": True})
 
 
+async def mock_zmq_stale(request):
+    # Freeze the reported ZMQ time and stop advancing it; the client's freshness
+    # light ages into amber "NO LIVE DATA" within its staleness window.
+    STATE["zmq_frozen_at"] = int(time.time())
+    await sio.emit("keep_alive", {"zmq_last_time": STATE["zmq_frozen_at"]})
+    return web.json_response({"success": True, "zmq_frozen_at": STATE["zmq_frozen_at"]})
+
+
+async def mock_zmq_fresh(request):
+    # Resume live ZMQ time → client light returns to mint "LIVE".
+    STATE["zmq_frozen_at"] = None
+    await sio.emit("keep_alive", {"zmq_last_time": _zmq_last_time()})
+    return web.json_response({"success": True, "zmq": "fresh"})
+
+
 async def options_handler(request):
     return web.Response(status=204)
 
@@ -783,6 +813,8 @@ def main():
     app.router.add_post("/mock/checking/{user_id}", mock_checking_user)
     app.router.add_post("/mock/empty", mock_empty)
     app.router.add_post("/mock/reset", mock_reset)
+    app.router.add_post("/mock/zmq-stale", mock_zmq_stale)
+    app.router.add_post("/mock/zmq-fresh", mock_zmq_fresh)
     app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)
 
     async def _start(app):
@@ -795,7 +827,7 @@ def main():
           f"{', PAUSED' if STATE['paused'] else ''})")
     print("Point `npm run dev` (http://localhost:5173) at it — it already targets :4001.")
     print(f"Controls: curl -X POST http://localhost:{args.port}/mock/"
-          "{pause,resume,clear,clear/<id>,checking/<id>,empty,reset}")
+          "{pause,resume,clear,clear/<id>,checking/<id>,empty,reset,zmq-stale,zmq-fresh}")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 

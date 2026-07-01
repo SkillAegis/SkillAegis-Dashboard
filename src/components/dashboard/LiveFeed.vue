@@ -2,7 +2,7 @@
 import { ref, reactive, watch, nextTick, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
   feed, feedEmpty, messages, apiMessages, timeline, searchUser, searchUrl, justCleared, PAYLOAD_PREVIEW_LINES,
-  verboseMode, apiQueryOnly, toggleVerbose, toggleApiQuery, userAuthenticated,
+  verboseMode, apiQueryOnly, toggleVerbose, toggleApiQuery, userAuthenticated, connectionHealth,
 } from './dashboardState.js'
 
 // Feed options menu (hamburger) — holds the server-side feed filters and is
@@ -64,7 +64,17 @@ watch(
   <div class="sa-feed">
     <div style="display:flex;align-items:center;gap:12px;padding:11px 16px 9px;border-bottom:1px solid rgba(var(--sa-cyan-rgb),.1);">
       <span style="font-size:14px;font-weight:700;letter-spacing:1.5px;color:var(--sa-text-2);">LIVE FEED</span>
-      <span class="sa-blink" style="width:8px;height:8px;border-radius:50%;background:var(--sa-mint);box-shadow:0 0 8px var(--sa-mint);"></span>
+      <span
+        :class="['sa-health-dot', connectionHealth.state]"
+        :style="{ background: connectionHealth.color, boxShadow: `0 0 8px ${connectionHealth.color}` }"
+        :title="connectionHealth.tooltip"
+      ></span>
+      <span
+        v-if="connectionHealth.state !== 'live'"
+        class="sa-mono sa-health-label"
+        :style="{ color: connectionHealth.color }"
+        :title="connectionHealth.tooltip"
+      >{{ connectionHealth.label }}</span>
       <div style="flex:1;"></div>
       <div style="display:flex;align-items:center;gap:7px;padding:5px 10px;border-radius:8px;background:rgba(var(--sa-cyan-rgb),.1);border:1px solid rgba(var(--sa-cyan-rgb),.2);">
         <span class="sa-mono" style="font-size:10px;color:var(--sa-text-4);">MESSAGES</span>
@@ -227,6 +237,34 @@ watch(
 }
 .sa-input::placeholder {
   color: #3c536f;
+}
+
+/* Connection / data-freshness light — colour + label come from
+   connectionHealth; motion slows as the state degrades. Reduced-motion is
+   handled globally (main.css). */
+.sa-health-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.sa-health-dot.live {
+  animation: sa-blink 1.3s infinite;
+}
+.sa-health-dot.idle {
+  animation: sa-blink 2.2s infinite;
+}
+.sa-health-dot.offline {
+  animation: sa-health-pulse 1.8s infinite;
+}
+@keyframes sa-health-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+.sa-health-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
 }
 .sa-payload-toggle {
   display: inline-block;

@@ -27,6 +27,8 @@ import {
   userCount,
   shouldHideGamification,
   userAuthenticated,
+  socketConnected,
+  zmqLastTime,
   toggleVerboseMode,
   toggleApiQueryMode,
 } from '@/socket'
@@ -41,6 +43,7 @@ const CHAMPION_PAGE = 4 // entries per champion sub-list page
 const JUST_SCORED_MS = 1700 // how long the "+N" score pop stays visible
 const BURST_MS = 1600 // how long the all-clear completion burst plays on a row
 const RECENT_LIMIT = 5 // rows in the "Just Cleared" strip pinned atop the feed
+const STALE_SEC = 20 // seconds since the last ZMQ message before the feed light warns "no live data"
 
 export { ROW_HEIGHT }
 
@@ -450,6 +453,32 @@ export const elapsed = computed(() => {
   }
   if (!Number.isFinite(min)) return '00:00'
   return fmtDur(now.value - min)
+})
+
+/* ------------------------------------------------------------------ */
+/* Connection / data-freshness light (Live Feed header)               */
+/* ------------------------------------------------------------------ */
+// Turns the raw socket/ZMQ signals into a three-state health light. O(1), so
+// ticking every second against the shared clock is free.
+//   LIVE     — socket up and a ZMQ message within STALE_SEC (mint, unchanged)
+//   IDLE     — socket up but no ZMQ data yet, or gone quiet ≥ STALE_SEC (amber)
+//   OFFLINE  — socket down (red)
+// `zmqLastTime` is Unix seconds (or false/null before any keep_alive carries a
+// timestamp); the shared `now` is ms, so compare in ms.
+export const connectionHealth = computed(() => {
+  const lastSec = zmqLastTime.value
+  const ageMs = typeof lastSec === 'number' ? Math.max(0, now.value - lastSec * 1000) : null
+
+  if (!socketConnected.value) {
+    return { state: 'offline', label: 'OFFLINE', color: 'var(--sa-danger)', tooltip: 'Offline · reconnecting…' }
+  }
+  if (ageMs === null) {
+    return { state: 'idle', label: 'NO LIVE DATA', color: 'var(--sa-gold)', tooltip: 'Connected · waiting for data' }
+  }
+  if (ageMs >= STALE_SEC * 1000) {
+    return { state: 'idle', label: 'NO LIVE DATA', color: 'var(--sa-gold)', tooltip: `No live data · last message ${fmtAgo(ageMs)} ago` }
+  }
+  return { state: 'live', label: 'LIVE', color: 'var(--sa-mint)', tooltip: `Live · last message ${fmtAgo(ageMs)} ago` }
 })
 
 /* ------------------------------------------------------------------ */

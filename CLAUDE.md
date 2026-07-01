@@ -40,6 +40,8 @@ server, but with synthetic, animated data so the board is alive the moment you l
   `clear/<user_id>` (one player clears — drives the all-clear burst),
   `checking/<user_id>` (fire a "being validated" pulse on a player's next available
   task — drives the per-task spinner), `empty` (wipe the board),
-  or `reset` (rebuild the world). `GET /` reports the paused flag and lists the controls.
+  `reset` (rebuild the world), or `zmq-stale` / `zmq-fresh` (freeze / resume the reported
+  ZMQ time — drives the Live Feed freshness light amber "NO LIVE DATA"; stopping the mock
+  drops the socket → red "OFFLINE"). `GET /` reports the paused flag and lists the controls.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
   real backend (`--zmq_log_file` replays a recorded session). See `docs/PRD-ui-testing.md`.

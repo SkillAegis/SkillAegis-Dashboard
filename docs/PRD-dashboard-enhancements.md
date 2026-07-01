@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — item 1 done (verified via mock), 5 remaining |
+| **Status** | In progress — items 1 & 2 done (verified via mock), 4 remaining |
 | **Date** | 2026-07-01 |
 | **Scope** | Six additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
@@ -40,7 +40,7 @@ rendering refactor and is the only large, higher-risk item.
 | # | Item | Effort | Risk | Status |
 |---|------|--------|------|--------|
 | 1 | Restore per-task "being validated" spinner | Small | Low | ✅ Done |
-| 2 | Connection / data-freshness diode (Live Feed) | Small–Med | Low | ☐ Planned |
+| 2 | Connection / data-freshness diode (Live Feed) | Small–Med | Low | ✅ Done |
 | 3 | Task-completion bar chart | Medium | Low | ☐ Planned |
 | 4 | First-blood badge | Small–Med | Low | ☐ Planned |
 | 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ☐ Planned |
@@ -133,7 +133,7 @@ MISP/ZMQ goes quiet, the board **silently freezes** and the trainer keeps trusti
   `@/socket`). It is O(1), so ticking every second is free.
 - **Threshold discussion.** `keep_alive` is every 5s, so socket-liveness is known within ~5–10s.
   ZMQ silence is *not* itself an error — a calm room legitimately produces no MISP traffic — so
-  amber is a soft "no live data" warning, not a failure. Recommend `STALE_SEC = 30` (tunable
+  amber is a soft "no live data" warning, not a failure. Recommend `STALE_SEC = 20` (tunable
   constant). Red (socket down) is the only hard-error state.
 - **Presentation.** Keep it compact in the Live Feed header where the dot lives; add a short
   text label beside it and a hover tooltip with detail ("Connected · last data 8s ago" /
@@ -154,6 +154,20 @@ is reachable today. Add controls to exercise the other two:
 - `/mock/zmq-stale` → dot turns amber "NO LIVE DATA" within ~`STALE_SEC`; tooltip shows the age.
 - Stopping the mock → dot turns red "OFFLINE"; reconnecting restores mint.
 - No new backend events; reads only `socketConnected` + `zmqLastTime`.
+
+**Status: ✅ Done (verified via mock — commit `<pending>`).** `dashboardState.js` gains a
+`connectionHealth` computed (O(1), ticks on the shared `now`): LIVE when `socketConnected` and the
+last ZMQ message is `< STALE_SEC` (20s) old, amber IDLE ("NO LIVE DATA") when connected but no data
+yet or gone quiet ≥ `STALE_SEC`, red OFFLINE when the socket is down. `LiveFeed.vue`'s hardcoded
+mint dot is now driven by it — colour from the existing `--sa-mint` / `--sa-gold` / `--sa-danger`
+tokens, a `title` tooltip with the live age ("Live · last message 8s ago" / "No live data · last
+message …" / "Offline · reconnecting…"), and motion that slows as the state degrades (LIVE keeps the
+unchanged 1.3s blink; IDLE a 2.2s blink; OFFLINE a soft pulse) — all neutralised by the global
+`prefers-reduced-motion` rule. The "LIVE" text label is suppressed so the healthy state stays the
+bare mint dot (acceptance: "unchanged look"); the amber/red labels appear only when degraded. Mock:
+`zmq_last_time` now flows through a `_zmq_last_time()` helper plus `POST /mock/zmq-stale` (freeze it →
+ages to amber) and `POST /mock/zmq-fresh` (resume → LIVE); OFFLINE is exercised by stopping the mock.
+Documented in `CLAUDE.md` + `README.md`. Probe confirmed the LIVE→amber→LIVE keep_alive transitions.
 
 ---
 

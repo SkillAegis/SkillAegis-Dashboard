@@ -99,7 +99,9 @@ To force a headline state without the admin panel, POST to the dev-only controls
 `curl -X POST http://localhost:4001/mock/clear/1` makes player 1 clear everything (the all-clear
 burst). Available: `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
 `clear/<user_id>`, `checking/<user_id>` (fire a "being validated" pulse on a player's next
-available task — drives the per-task spinner), `empty` (wipe the board), `reset` (rebuild the world).
+available task — drives the per-task spinner), `empty` (wipe the board), `reset` (rebuild the
+world), `zmq-stale` / `zmq-fresh` (freeze / resume the reported ZMQ time — drives the Live Feed
+freshness light amber "NO LIVE DATA"; stopping the mock drops the socket → red "OFFLINE").
 
 This is a UI harness only — it does not run the evaluation engine. See
 [`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
