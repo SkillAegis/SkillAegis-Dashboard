@@ -230,6 +230,12 @@ numbers; and a right-hand "HARDEST Task N · Y%" callout names the least-cleared
 were needed. Cleanup: dropped the unused `vue3-apexcharts` import from `main.js` (shrinks the bundle;
 the dep is still in `package.json`).
 
+**Refinement (commit `5a6a972`):** after reviewing four visualization options (bars / trend curve /
+compact bars / heat strip) side-by-side, the band was made **compact** — half-height bars, per-bar
+numbers dropped (columns still align to the task grid above), single-line label — while keeping the
+full stacked "HARDEST · Task N · Y%" callout. This buys back vertical space for more leaderboard
+rows; the `taskCompletion` view-model is unchanged.
+
 ---
 
 ## 4. First-blood badge
