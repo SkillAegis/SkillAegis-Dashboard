@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | In progress — items 1–5 done (verified via mock); 6 remaining |
+| **Status** | In progress — items 1–5 & 7 done (verified via mock); 6 remaining |
 | **Date** | 2026-07-01 |
-| **Scope** | Six additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale. |
+| **Scope** | Seven additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale, (7) a manual reduce-motion toggle. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
 
 ## Background
@@ -45,6 +45,7 @@ rendering refactor and is the only large, higher-risk item.
 | 4 | First-blood badge | Small–Med | Low | ✅ Done |
 | 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ✅ Done |
 | 6 | Performance at scale | Large | Med | ☐ Planned — see discussion |
+| 7 | Manual reduce-motion toggle (admin panel) | Small | Low | ✅ Done |
 
 **Recommended sequencing:** ship 1 → 2 → 4 → 3 first (small, self-contained, high signal, each
 independently useful). Do **item 6 before, or interleaved with, item 3** — item 3 adds another
@@ -435,6 +436,41 @@ sits on the optimized base.
 - Acceptable to reduce some effects' update rate (e.g. fire bar) if needed for headroom?
 
 ---
+
+## 7. Manual reduce-motion toggle (admin panel)
+
+**Problem.** The dashboard honors the OS `prefers-reduced-motion` setting globally (see the rule in
+`main.css`, relied on by items 1 & 2), but a projected command-center wall is often driven by a
+kiosk/OS that has no such setting configured. There was no in-app way to calm the animations for a
+long-running projection or for a motion-sensitive viewer.
+
+**Change.** A "Reduce motion" toggle in the admin panel's Control Panel tab, in the row the retired
+theme toggle (item 5) used to occupy.
+
+- **State:** `reduceMotionOn` ref in `settings.js`, default `false` — a *manual override that is
+  additive on top of* the OS setting (it can force reduced motion on; it does not override an OS
+  `prefers-reduced-motion: reduce`, which stays authoritative).
+- **Apply:** `App.vue` watches it (`immediate`) and toggles a `reduce-motion` class on `<body>`.
+- **CSS:** `main.css` mirrors the existing `@media (prefers-reduced-motion)` neutralization block for
+  `body.reduce-motion` (same `animation-duration`/`iteration-count`/`transition-duration` kill).
+- **UI:** reuses the existing `.toggle` pill component (`toggle.css`, `toggle-info` variant) — the
+  same component the old theme button used, otherwise now unused.
+
+**Affected files.** `src/settings.js`, `src/App.vue`, `src/assets/main.css`,
+`src/components/adminPanel/ControlButtons.vue`.
+
+**Acceptance.**
+- Toggling it on immediately calms all looping animations app-wide (blink dots, spinners, fire bars,
+  heat pulses); toggling off restores them.
+- OS `prefers-reduced-motion` continues to work independently.
+- Visible via the mock, no real backend.
+
+**Status: ✅ Done (verified via mock — PRD bundled into the code commit).** `reduceMotionOn` (default `false`) in
+`settings.js`; `App.vue` syncs it to a `body.reduce-motion` class via an `immediate` watch; `main.css`
+gains a `body.reduce-motion` block mirroring the OS `prefers-reduced-motion` neutralization;
+`ControlButtons.vue` renders a `.toggle toggle-info` pill (reusing the component freed by item 5) as
+the first Control Panel row. Verified headless: toggling the class on freezes the leaderboard blink /
+Live-Feed diode / spinners, toggling off restores them; the OS media query is untouched.
 
 ## Feature-level acceptance
 

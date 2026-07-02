@@ -55,3 +55,16 @@
         scroll-behavior: auto !important;
     }
 }
+
+/* Manual override: the admin panel "Reduce motion" toggle adds .reduce-motion to
+   <body> (settings.js: reduceMotionOn), applying the same neutralization app-wide
+   regardless of the OS setting — for a projected wall whose OS has none set. */
+body.reduce-motion,
+body.reduce-motion *,
+body.reduce-motion *::before,
+body.reduce-motion *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+}

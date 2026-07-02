@@ -1,9 +1,14 @@
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import TheAdminPanel from './components/TheAdminPanel.vue'
 import TheDahboard from './TheDahboard.vue'
 import Toaster from '@/components/elements/Toaster.vue'
 import { socketConnected, checkUserAuthenticated } from './socket'
+import { reduceMotionOn } from './settings.js'
+
+watch(reduceMotionOn, (on) => document.body.classList.toggle('reduce-motion', on), {
+  immediate: true,
+})
 
 onMounted(() => {
   checkUserAuthenticated()

@@ -7,11 +7,20 @@
         resetLiveLogs,
         reloadFromDisk
     } from '@/socket'
+    import { reduceMotionOn } from '@/settings.js'
 </script>
 
 <template>
     <div>
         <table class="">
+            <tr class="">
+                <td>
+                    <label class="grid cursor-pointer place-items-center">
+                        <input type="checkbox" v-model="reduceMotionOn" class="toggle toggle-info" />
+                    </label>
+                </td>
+                <td class="text-lg">Reduce motion — calm animations for projection &amp; accessibility</td>
+            </tr>
             <tr class="">
                 <td>
                     <button @click="resetAllExerciseProgress()" class="h-10 min-h-10 font-semibold btn-danger btn gap-1">
