@@ -43,7 +43,6 @@ admin_settings = {
         "password": random_string if admin_password is None else admin_password,
     }
 }
-print(admin_settings["credentials"])
 
 import logging
 logger = logging.getLogger('SkillAegis')
@@ -55,3 +54,5 @@ ch = logging.StreamHandler()
 ch.setLevel(logging.INFO)
 ch.setFormatter(formatter)
 logging.getLogger().addHandler(ch)
+
+logging.info(f"Administrator credentials: {admin_settings['credentials']}")
