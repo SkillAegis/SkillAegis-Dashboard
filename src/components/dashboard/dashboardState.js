@@ -230,6 +230,9 @@ const gains = reactive({})
 // page reload onto an already-complete board stays calm (prevDone is unseeded).
 const completions = reactive({})
 
+// `state.progresses` is reassigned wholesale on every update, so its identity
+// already changes each time — a shallow (identity) watch fires reliably and
+// skips the deep-traversal cost that scaled with roster size (item 6, perf).
 watch(
   () => progresses.value,
   (np) => {
@@ -254,8 +257,7 @@ watch(
       }
       prevDone[key] = done
     }
-  },
-  { deep: true }
+  }
 )
 
 /* ------------------------------------------------------------------ */
@@ -263,11 +265,18 @@ watch(
 /* ------------------------------------------------------------------ */
 const MEDALS = ['var(--sa-gold)', '#c7d3e6', '#e09b62']
 
-export const players = computed(() => {
+// Item 6 (perf): the leaderboard is split into a heavy data-driven base and a
+// thin time-driven overlay. `playersBase` does the O(P×T) work — each row's task
+// grid + heat, the score-rank pass and the display sort — and reads data only
+// (progresses / activity / sort / filter), so it rebuilds on data change, NOT on
+// the 1s clock. `players` overlays the per-row transient effects (on-fire
+// countdown, "+N" just-scored, all-clear burst) that DO read `now`, mapping the
+// stable base rows without rebuilding the grid or re-sorting. Base rows' `tasks`/
+// `heat` arrays keep their identity across ticks, so the squares don't re-render.
+const playersBase = computed(() => {
   const ex = selectedExercise.value
   if (!ex) return []
   const tasksLen = ex.tasks.length || 1
-  const nowMs = now.value
 
   let rows = Object.values(progresses.value)
     .filter((p) => p.exercises?.[ex.uuid] !== undefined)
@@ -279,22 +288,13 @@ export const players = computed(() => {
       const maxScore = exProgress.max_score ?? 0
       const { name, org } = splitEmail(p.email)
 
+      // On-fire is a live countdown (reads `now`), so only the raw interval is
+      // captured here; the overlay derives is-on-fire + bar % against the clock.
       const status = p.status || {}
       const fireInterval = status.on_fire_last_interval || null
       const fireUntil = fireInterval ? fireInterval[1] * 1000 : 0
       const fireStart = fireInterval ? fireInterval[0] * 1000 : 0
-      const onFire = !!status.is_on_fire && fireUntil > nowMs
-      const fireBarPct =
-        onFire && fireUntil > fireStart
-          ? Math.max(0, Math.min(100, Math.round(((fireUntil - nowMs) / (fireUntil - fireStart)) * 100)))
-          : 0
-
-      const g = gains[p.user_id]
-      const justScored = !!g && nowMs - g.at < JUST_SCORED_MS
-
-      const complete = ex.tasks.length > 0 && done >= ex.tasks.length
-      const cmp = completions[p.user_id]
-      const justCompleted = !!cmp && nowMs - cmp.at < BURST_MS
+      const fireEligible = !!status.is_on_fire
 
       const heatSrc = userActivity.value?.[p.user_id] || []
       const heat = heatSrc.map((v) => ({ bg: heatColor(v) }))
@@ -325,6 +325,8 @@ export const players = computed(() => {
         }
       })
 
+      const complete = ex.tasks.length > 0 && done >= ex.tasks.length
+
       return {
         id: p.user_id,
         name,
@@ -337,16 +339,14 @@ export const players = computed(() => {
         tasksLen,
         doneLabel: `${done}/${tasksLen}`,
         barPct: Math.round((done / tasksLen) * 100),
-        isFire: onFire,
-        fireBarPct,
-        justScored,
         complete,
-        justCompleted,
-        gain: g?.gain ?? 0,
         firstBloods: firstBloodTasks.length,
         firstBloodTasks,
         heat,
         tasks,
+        fireEligible,
+        fireUntil,
+        fireStart,
       }
     })
 
@@ -369,16 +369,55 @@ export const players = computed(() => {
   return rows.map((r, i) => {
     const sRank = scoreRank.get(r.id)
     const top = sRank < 3 && r.score > 0
-    const onFire = r.isFire
-    const just = r.justScored
-    // Clearing every task is the headline achievement — its gold/mint treatment
-    // outranks the on-fire, just-scored and top-3 row states.
     const done100 = r.complete
+    // Data-only decoration lives here; the score/row/glow tints that also blend
+    // the transient on-fire / just-scored states are finished in the overlay.
     return {
       ...r,
       rank: sRank + 1,
+      top,
+      done100,
       y: i * ROW_HEIGHT,
       opacity: r.active ? 1 : 0.5,
+      rankFg: top ? 'var(--sa-ink)' : 'var(--sa-text-4)',
+      rankBg: top ? MEDALS[sRank] : 'rgba(var(--sa-cyan-rgb),.08)',
+      rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
+      rowBorder: done100
+        ? 'rgba(var(--sa-gold-rgb),.5)'
+        : top
+          ? 'rgba(var(--sa-gold-rgb),.22)'
+          : 'rgba(var(--sa-cyan-rgb),.08)',
+      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
+    }
+  })
+})
+
+export const players = computed(() => {
+  const nowMs = now.value
+  return playersBase.value.map((r) => {
+    const onFire = r.fireEligible && r.fireUntil > nowMs
+    const fireBarPct =
+      onFire && r.fireUntil > r.fireStart
+        ? Math.max(0, Math.min(100, Math.round(((r.fireUntil - nowMs) / (r.fireUntil - r.fireStart)) * 100)))
+        : 0
+
+    const g = gains[r.id]
+    const justScored = !!g && nowMs - g.at < JUST_SCORED_MS
+    const cmp = completions[r.id]
+    const justCompleted = !!cmp && nowMs - cmp.at < BURST_MS
+
+    const done100 = r.done100
+    const top = r.top
+    const just = justScored
+    return {
+      ...r,
+      isFire: onFire,
+      fireBarPct,
+      justScored,
+      justCompleted,
+      gain: g?.gain ?? 0,
+      // Clearing every task is the headline achievement — its gold/mint treatment
+      // outranks the on-fire, just-scored and top-3 row states.
       scoreColor: done100
         ? '#ffd970'
         : onFire
@@ -390,9 +429,6 @@ export const players = computed(() => {
               : r.score === 0
                 ? 'var(--sa-text-6)'
                 : 'var(--sa-text-2)',
-      rankFg: top ? 'var(--sa-ink)' : 'var(--sa-text-4)',
-      rankBg: top ? MEDALS[sRank] : 'rgba(var(--sa-cyan-rgb),.08)',
-      rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
       rowBg: done100
         ? 'linear-gradient(90deg,rgba(var(--sa-mint-rgb),.12),rgba(var(--sa-gold-rgb),.07))'
         : just
@@ -400,17 +436,11 @@ export const players = computed(() => {
           : top
             ? 'rgba(var(--sa-gold-rgb),.06)'
             : 'rgba(var(--sa-cyan-rgb),.03)',
-      rowBorder: done100
-        ? 'rgba(var(--sa-gold-rgb),.5)'
-        : top
-          ? 'rgba(var(--sa-gold-rgb),.22)'
-          : 'rgba(var(--sa-cyan-rgb),.08)',
       glow: done100
         ? '0 0 0 1px rgba(var(--sa-gold-rgb),.4),0 0 24px rgba(var(--sa-mint-rgb),.22)'
         : just
           ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
           : 'none',
-      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
     }
   })
 })
@@ -493,9 +523,12 @@ export const clock = computed(() => {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 })
 
-export const elapsed = computed(() => {
+// Item 6 (perf): the earliest-completion anchor is O(P×T) to find, so cache it
+// in its own data-driven computed (recomputes on progress change only); the live
+// clock then formats against it in O(1) each tick instead of rescanning.
+const exerciseStart = computed(() => {
   const ex = selectedExercise.value
-  if (!ex) return '00:00'
+  if (!ex) return null
   let min = Infinity
   for (const p of Object.values(progresses.value)) {
     const tc = p.exercises?.[ex.uuid]?.tasks_completion
@@ -504,8 +537,13 @@ export const elapsed = computed(() => {
       if (c && c.timestamp) min = Math.min(min, c.timestamp * 1000)
     }
   }
-  if (!Number.isFinite(min)) return '00:00'
-  return fmtDur(now.value - min)
+  return Number.isFinite(min) ? min : null
+})
+
+export const elapsed = computed(() => {
+  const start = exerciseStart.value
+  if (start === null) return '00:00'
+  return fmtDur(now.value - start)
 })
 
 /* ------------------------------------------------------------------ */
@@ -683,8 +721,14 @@ export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
 /* ------------------------------------------------------------------ */
 /* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
 /* ------------------------------------------------------------------ */
+// Item 6 (perf): the champion sub-list page index advances every ROT_MS. Deriving
+// it in its own computed means it only changes value on that cadence — so the
+// `champions` view-model (which reads it) recomputes on rotation / scene / stats
+// change, not every 1s tick as it did when it read `now` directly.
+const championRot = computed(() => Math.floor(now.value / ROT_MS))
+
 function buildCard(ranked, fmt, fracOf) {
-  const rot = Math.floor(now.value / ROT_MS)
+  const rot = championRot.value
   const leader = ranked[0]
     ? { name: splitEmail(ranked[0].email).name, val: fmt(ranked[0].v), v: ranked[0].v }
     : { name: '—', val: fmt(0), v: 0 }
