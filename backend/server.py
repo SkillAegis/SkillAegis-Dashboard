@@ -519,7 +519,7 @@ async def backup_exercises_progress():
 
 
 def start_sandbox_agent():
-    bin_path = os.path.abspath("./venv/bin/python3")
+    bin_path = sys.executable
     script_path = os.path.abspath("./backend/sandboxAgent.py")
     process = subprocess.Popen(
         [bin_path, script_path],
