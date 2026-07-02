@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — items 1, 2, 3 & 4 done (verified via mock); 5 & 6 remaining |
+| **Status** | In progress — items 1–5 done (verified via mock); 6 remaining |
 | **Date** | 2026-07-01 |
 | **Scope** | Six additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
@@ -43,7 +43,7 @@ rendering refactor and is the only large, higher-risk item.
 | 2 | Connection / data-freshness diode (Live Feed) | Small–Med | Low | ✅ Done |
 | 3 | Task-completion bar chart | Medium | Low | ✅ Done |
 | 4 | First-blood badge | Small–Med | Low | ✅ Done |
-| 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ☐ Planned |
+| 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ✅ Done |
 | 6 | Performance at scale | Large | Med | ☐ Planned — see discussion |
 
 **Recommended sequencing:** ship 1 → 2 → 4 → 3 first (small, self-contained, high signal, each
@@ -336,6 +336,19 @@ admin-panel component needing a dark fix.
 - Dashboard and admin panel are consistently dark; no surface renders light.
 - No dead theme-switching code left behind (or `darkModeOn` pinned `true` with a note explaining
   why it stays).
+
+**Status: ✅ Done (verified via mock — commit `fb1e38f`).** `TheThemeButton.vue` is deleted and its
+row (+ import) removed from `adminPanel/ControlButtons.vue`, so no dark/light toggle is presented
+anywhere. Dark is now forced declaratively via `class="dark"` on `<body>` in `index.html` (applied
+before Vue mounts — no flash — a stronger guarantee than the old `App.vue` `onMounted` path, which
+is now dropped along with its `darkModeEnabled` import). The dead toggle state
+(`darkModeOn`/`darkModeEnabled`) is removed from `settings.js` entirely — nothing else read it.
+Verified headless (Chrome/CDP against the mock): `body.className === "dark"`, `.theme-controller`
+absent everywhere, the "Switch between Dark/Light" row gone from the admin Control Panel tab, dashboard
+renders fully dark, zero console errors. **Scope note (decided 2026-07-02):** the admin-panel *modal*
+body is an intentional light card (`bg-slate-300`, `dark:text-slate-700` = dark text on light in both
+modes) and was left unchanged — it "renders correctly" and re-theming it dark is a separate design
+change outside this item, which explicitly touched neither `.sa-root` tokens nor the modal palette.
 
 ---
 
