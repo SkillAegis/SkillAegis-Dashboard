@@ -7,18 +7,11 @@
         resetLiveLogs,
         reloadFromDisk
     } from '@/socket'
-    import TheThemeButton from '@/components/TheThemeButton.vue'
 </script>
 
 <template>
     <div>
         <table class="">
-            <tr class="">
-                <td>
-                    <TheThemeButton></TheThemeButton>
-                </td>
-                <td class="text-lg">Switch between Dark/Light theme</td>
-            </tr>
             <tr class="">
                 <td>
                     <button @click="resetAllExerciseProgress()" class="h-10 min-h-10 font-semibold btn-danger btn gap-1">
