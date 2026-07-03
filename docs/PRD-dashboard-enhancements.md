@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — items 1–5 & 7 done (verified via mock); 6 remaining |
+| **Status** | Done — items 1–7 complete (verified via mock) |
 | **Date** | 2026-07-01 |
 | **Scope** | Seven additive improvements to the live dashboard: (1) restore the per-task "being validated" indicator, (2) turn the Live Feed diode into a connection / data-freshness light, (3) a task-completion bar chart, (4) a first-blood badge, (5) theme consistency, (6) performance at scale, (7) a manual reduce-motion toggle. |
 | **Non-goals** | No change to the evaluation engine, scoring math, scenario format, or the Socket.IO event contract. Items 1, 2 and 4 restore/surface data the backend **already emits** — no new backend events. |
@@ -44,7 +44,7 @@ rendering refactor and is the only large, higher-risk item.
 | 3 | Task-completion bar chart | Medium | Low | ✅ Done |
 | 4 | First-blood badge | Small–Med | Low | ✅ Done |
 | 5 | Theme consistency — retire light-mode toggle (dark-only) | Small | Low | ✅ Done |
-| 6 | Performance at scale | Large | Med | ☐ Planned — see discussion |
+| 6 | Performance at scale | Large | Med | ✅ Done |
 | 7 | Manual reduce-motion toggle (admin panel) | Small | Low | ✅ Done |
 
 **Recommended sequencing:** ship 1 → 2 → 4 → 3 first (small, self-contained, high signal, each
@@ -429,11 +429,62 @@ from the clock — the mock's scenario controls (`/mock/clear/<id>`, `/mock/clea
 are the regression harness. Land item 6 (at least steps 1–2) **before** item 3 so the new chart
 sits on the optimized base.
 
-### Open questions
+### Open questions — resolved (2026-07-02)
 
-- Real maximum session size (sets the target ceiling)?
-- Is losing cross-page row animations (windowing, step 2) acceptable? (Recommended yes.)
-- Acceptable to reduce some effects' update rate (e.g. fire bar) if needed for headroom?
+- **Real maximum session size:** ~50 players. So the PRD's 100/200 targets are headroom, not the
+  operating point; phase 1 alone already covers the real load, and the rest is architectural polish.
+- **Losing cross-page row animations (windowing):** **reverted on review.** Windowing was applied,
+  but it turned the auto-rotation from a smooth cross-page slide/fade into an instant swap — and that
+  slide is wanted on the projected wall. At ~50 players rendering every row is already cheap once the
+  per-second rebuild is gone (step 1), so windowing was dropped (see step 2 below).
+- **Reducing some effects' update rate:** not needed. No effect's cadence was lowered; the fire-bar
+  countdown, +N pop and all-clear burst all still update every second (they just no longer drag the
+  whole O(P×T) grid rebuild along with them).
+
+**Status: ✅ Done (verified via mock — PRD bundled into the code commit).** Four of the five ranked
+optimizations shipped (1, 3, 4, 5); windowing (2) was implemented and measured, then **reverted on
+review** to keep the page-rotation slide/fade (see step 2 below). The two optional ones (6 throttle
+inbound, 7 inline-styles→classes) were **not** needed at the ~50 ceiling and are deliberately deferred
+(per-tick string building is already gone after step 1, and no inbound bursts occur at this scale).
+Hot-path #6 (`updateTaskCheckInProgress` seeding) was left alone —
+it is O(P×E×T) *per update*, negligible at ~50, and pre-seeding is technically unnecessary in Vue 3
+(new keys are reactive), but removing it touches the socket contract layer and was out of scope.
+
+- **1 — Split time-driven from data-driven** (`dashboardState.js`). `players` is now a heavy
+  data-driven `playersBase` (the O(P×T) task grid + heat, the score-rank pass and the display sort —
+  reads progresses / activity / sort / filter only) plus a thin `players` overlay that maps the stable
+  base rows and layers on the transient effects that read `now` (on-fire countdown %, `justScored`
+  +N, `justCompleted` burst) and the tints that blend them. Base rows' `tasks`/`heat` arrays keep
+  their identity across ticks, so the squares don't re-render each second.
+- **2 — Windowing** — *implemented, measured, then reverted.* A `visibleRows` computed mounted only
+  the current page (~10 rows) instead of all P, cutting the DOM from O(P×T) to O(rowsPerPage×T). It
+  worked, but it replaced the auto-rotation's smooth cross-page slide/fade with an instant page swap.
+  On review that slide is wanted on the projected wall, and at the ~50-player ceiling rendering all
+  rows is already cheap now that step 1 removed the per-second rebuild — so windowing was reverted and
+  `LiveLeaderboard.vue` is unchanged from before item 6. (A prev/current/next window could keep the
+  full slide with less DOM, but the saving is marginal at ≤50 and it adds page-wrap edge cases.)
+- **3 — Cache the `elapsed` anchor.** The earliest-completion timestamp is a data-driven
+  `exerciseStart` computed (recomputes on progress change); `elapsed` formats `now − start` in O(1)
+  each tick instead of rescanning O(P×T) every second.
+- **4 — Split `champions`.** The sub-list page index is a `championRot` computed keyed on `ROT_MS`,
+  so its value only changes on the rotation cadence — `champions` recomputes on rotation / scene /
+  stats change, not every 1s tick.
+- **5 — Drop the deep watch.** `state.progresses` is reassigned wholesale each update, so the
+  `progresses` watch is now a shallow (identity) watch — same firing, without the roster-sized deep
+  traversal.
+
+**Measured (headless Chrome/CDP against the mock; the shared 1s clock ticks ~17×/16s):**
+
+| | before | after |
+|---|---|---|
+| **200 players, idle** (frozen 16s) — leaderboard rebuilds | 17× full O(P×T), **219ms**, 25ms worst | base **0×**; overlay 17× = **6ms**, 0.5ms worst |
+| **200 players, active** (16s) — leaderboard CPU | **698ms**, 45ms worst frame | **258ms** (base 12× on data change; overlay 34× all <1ms) |
+| **50 players, active** (16s) — worst single rebuild | — | **6.6ms** (`playersBase`); everything else <2ms |
+
+The per-second full-grid rebuild is eliminated (idle heavy work → 0); the clock-driven path's worst
+frame dropped 45ms → <1ms; at the real ~50-player ceiling every rebuild is comfortably within a
+frame. Transient animations intact — fire-bar countdown ticks down every second (72→70→67%…), the +N
+pop, all-clear burst, first-blood badges and the checking spinner all still fire (screenshotted).
 
 ---
 
