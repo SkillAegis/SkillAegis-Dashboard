@@ -76,7 +76,8 @@ is open** and resumes on close — the board should not silently cycle through p
   `update_statistics` / `update_users_activity` / `notification` for that user.
 - Independent of the gamification rail — the drawer is a monitoring tool and is available even when
   `shouldHideGamification` hides HallOfFame/Champions.
-- Width ~460px, responsive (`max-width` clamp on narrow viewports); does not block the board.
+- Two-column layout ~920px wide (profile column + full-height events rail), responsive
+  (`min(920px, 96vw)` clamp on narrow viewports); does not block the board.
 
 ## Decisions (2026-07-03)
 
@@ -94,6 +95,12 @@ Resolving the prior "Open questions":
   convention, mark each phase ✅ Done with its commit ref **in the same commit** as that phase's code.
 - **Auto-paginate while open** → **pause** the board rotation while the drawer is open (it hides most
   of the board), resuming on close.
+- **Drawer layout** (validated in Phase 0 — **Variant B**) → **two columns at ~2× width (≈920px)**: a
+  scrolling **main column** (header + status chips, per-task timing, last-seen + activity sparkline)
+  beside a **full-height, independently-scrollable events rail** on the right, so a trainer can browse
+  a participant's recent request/webhook history without disturbing the profile next to it. Mockup:
+  `docs/mockups/player-drilldown.html` (self-contained; embeds the app's Space Grotesk / JetBrains
+  Mono faces and the `.sa-root` tokens).
 
 ## Implementation phases
 
@@ -149,8 +156,11 @@ The interaction surface and a shippable drawer that identifies the clicked playe
 - Wiring in `LiveLeaderboard.vue`: row card `@click` → `openPlayer(p.id)`, `cursor:pointer`; task
   squares get `@click.stop` **guarded by `userAuthenticated`** so admin toggling doesn't also open
   the drawer (viewers fall through to the row handler).
-- Overlay: slide-over from the right (~460px), dimming backdrop; enter/leave transition gated on
-  `reduceMotionOn`.
+- Overlay: slide-over from the right (~920px, clamped to `96vw`), dimming backdrop; enter/leave
+  transition gated on `reduceMotionOn`.
+- Two-column drawer body (Phase 0 Variant B): a scrolling **main column** holding the profile
+  sections beside a **full-height, independently-scrollable events rail** on the right. Phase 1 builds
+  the rail's shell + header; its list stays an empty-state placeholder until Phase 4 populates it.
 - Pause auto-paginate while the drawer is open: guard `rotatePage` on `selectedPlayerId` so it holds
   the current page, resuming rotation on close.
 - Accessibility: `Esc` + backdrop + close-button dismiss; focus trap while open; focus returned to
@@ -186,7 +196,10 @@ Turn the drawer into a timing profile for the selected exercise.
   is measured from `exerciseStart`.
 - "Currently on" = available tasks (`taskRequirementMet` true, not done), highlighted.
 - A total clear-time line for players who have finished.
-- Render the task list in the drawer, reusing `fmtDur` / `fmtAgo`.
+- Render the task list in the drawer, reusing `fmtDur` / `fmtAgo`. Each timing/gap chip carries an
+  explanatory `title` tooltip (e.g. `+1:46` → "time on this task — gap since the previous
+  completion"; the first task's gap → "measured from the exercise start"), plus the "on now" / "idle"
+  / locked chips.
 
 **Data sources.** `tasks_completion[uuid].{timestamp,first_completion}`, `exerciseStart`,
 `taskRequirementMet`. No new data.
@@ -248,7 +261,8 @@ implementer's discretion.
   when `message.user_id` matches the selected player.
 - `dashboardState.js`: `selectedPlayerEvents` selector shaping events for display (reuse the
   `feed` row shaping — method chip, url/target_tool, payload preview).
-- `PlayerDrawer.vue`: events section, newest first, live-appending.
+- `PlayerDrawer.vue`: populate the full-height **events rail** (the shell built in Phase 1), newest
+  first, live-appending.
 
 **Contract.** Adds the `get_user_events` request/ack event only; live updates reuse the existing
 `notification` push.
