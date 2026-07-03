@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — Phase 0 done (2026-07-03); Phase 1 next |
+| **Status** | In progress — Phase 1 done (2026-07-03); Phase 2 next |
 | **Date** | 2026-07-03 |
 | **Scope** | SkillAegis-Dashboard frontend (`src/components/dashboard/*`, `src/socket.js`) **and** a backend addition for per-user event history (`backend/db.py`, `backend/notification.py`, `backend/server.py`) plus matching mock support (`backend/dev_mock_server.py`). |
 | **Non-goals** | No change to the evaluation engine, scoring math, or scenario format. The Socket.IO contract gains exactly **one** request/ack event (`get_user_events`); no new server-push event — live event updates ride the existing `notification` push. No change to any existing event. |
@@ -109,7 +109,7 @@ Resolving the prior "Open questions":
 | # | Phase | Layer | Effort | Risk | Status |
 |---|---|---|---|---|---|
 | 0 | Design proposal & validation | Design | Small | — | ✅ Done (d4d7074) |
-| 1 | Drawer shell + header | Frontend | Medium | Med | ⬜ Not started |
+| 1 | Drawer shell + header | Frontend | Medium | Med | ✅ Done (5c746d0) |
 | 2 | Per-task timing & gaps | Frontend | Medium | Low | ⬜ Not started |
 | 3 | Last-seen & activity sparkline | Frontend | Small | Low | ⬜ Not started |
 | 4 | Recent events (backend per-user history + frontend) | Full-stack | Large | Med | ⬜ Not started |
@@ -182,7 +182,15 @@ The interaction surface and a shippable drawer that identifies the clicked playe
 - Header updates live when that player scores; auto-paginate rotation pauses while open and resumes
   cleanly on close.
 
-**Status: ⬜ Not started.**
+**Status: ✅ Done — 5c746d0.** `PlayerDrawer.vue` mounted at the dashboard root (dimming backdrop +
+~920px slide-over, two-column body with the events-rail shell as an empty-state placeholder until
+Phase 4). Header renders identity, rank badge, score / max_score, and the live status chips.
+Row is a `role=button`/`tabindex=0` opening the drawer (click / Enter / Space); task squares
+`stopPropagation` only when authenticated so admin toggling stays in place. Auto-paginate holds while
+open. Esc / backdrop / close dismiss; focus trapped while open and returned to the originating row;
+slide honours the reduce-motion toggle. Verified end-to-end on the mock via headless Chrome (CDP):
+open with correct identity + chips, admin square-click does not open, Esc / backdrop dismiss,
+keyboard open + focus trap + focus return.
 
 ---
 
