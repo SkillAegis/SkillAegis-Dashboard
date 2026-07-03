@@ -66,8 +66,10 @@ is open** and resumes on close — the board should not silently cycle through p
 - **Row click** opens the drawer. A **task square** must still toggle completion for an admin, so
   square clicks stop propagation **only when authenticated** — a viewer clicking anywhere on the
   row (squares included) opens the drawer; an admin clicking a square toggles without opening.
-- Clicking a different row while the drawer is open **switches** it to that player (the drawer's
-  contents are derived reactively from `selectedPlayerId`, so no teardown is needed).
+- The drawer is a **modal** (Phase 1 decision, 2026-07-03): the dimming backdrop covers the board
+  and a click on it dismisses, so switching players is close-then-reopen rather than a live
+  row-swap behind the backdrop. The contents are still derived reactively from `selectedPlayerId`,
+  so re-pointing it (e.g. from a future in-drawer control) needs no teardown.
 - Dismiss via close button, `Esc`, and backdrop click; **trap focus** while open; **return focus**
   to the originating row on close.
 - Enter/leave transition honours the admin reduce-motion toggle (`reduceMotionOn`, from
@@ -95,6 +97,9 @@ Resolving the prior "Open questions":
   convention, mark each phase ✅ Done with its commit ref **in the same commit** as that phase's code.
 - **Auto-paginate while open** → **pause** the board rotation while the drawer is open (it hides most
   of the board), resuming on close.
+- **Modal vs. live row-switch** (Phase 1, 2026-07-03) → **modal**: the dimming backdrop covers the
+  board and dismisses on click; switching players is close-then-reopen, not a live swap behind the
+  backdrop. Keeps clean `aria-modal` semantics and matches the signed-off Variant B mockup.
 - **Drawer layout** (validated in Phase 0 — **Variant B**) → **two columns at ~2× width (≈920px)**: a
   scrolling **main column** (header + status chips, per-task timing, last-seen + activity sparkline)
   beside a **full-height, independently-scrollable events rail** on the right, so a trainer can browse
