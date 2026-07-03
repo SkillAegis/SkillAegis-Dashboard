@@ -559,11 +559,11 @@ export const podium = computed(() => {
         medal: MEDALS[r],
         glow: first ? 'rgba(var(--sa-gold-rgb),.6)' : 'rgba(199,211,230,.3)',
         scoreColor: MEDALS[r],
-        badge: first ? 60 : 42,
-        nameSize: first ? 19 : 14,
-        scoreSize: first ? 24 : 16,
+        badge: first ? 52 : 38,
+        nameSize: first ? 17 : 13,
+        scoreSize: first ? 20 : 14,
         badgeAnim: first ? 'sa-gold 2s ease-in-out infinite' : 'sa-pop .5s ease',
-        barH: first ? 74 : r === 1 ? 48 : 34,
+        barH: first ? 48 : r === 1 ? 34 : 24,
         barBg: first
           ? 'linear-gradient(180deg,var(--sa-gold),rgba(var(--sa-gold-rgb),.06))'
           : `linear-gradient(180deg,${MEDALS[r]},rgba(199,211,230,.04))`,
