@@ -448,6 +448,87 @@ export const players = computed(() => {
 export const taskLabels = computed(() => (selectedExercise.value?.tasks || []).map((t) => t.name))
 
 /* ------------------------------------------------------------------ */
+/* Selected player — the drill-down drawer                            */
+/* ------------------------------------------------------------------ */
+// Which participant the drill-down drawer is profiling (user_id), or null when
+// closed. PlayerDrawer.vue is a pure view over `selectedPlayer` below; opening
+// and closing is just setting this ref. Exported so LiveLeaderboard can pause
+// its auto-paginate rotation while the drawer covers the board.
+export const selectedPlayerId = ref(null)
+export function openPlayer(id) {
+  selectedPlayerId.value = id
+}
+export function closePlayer() {
+  selectedPlayerId.value = null
+}
+
+// Live status chips for the drawer header, mapped from the same
+// progresses[user_id].status the leaderboard already consumes. The three fixed
+// badges carry preset token colours; each collected trophy borrows its glyph +
+// hue from TROPHY_GLYPHS (as the champion slot does), falling back to a 🏆.
+const CHIP_STYLES = {
+  fire: {
+    color: 'var(--sa-fire-mid)',
+    background: 'rgba(var(--sa-fire-mid-rgb),.14)',
+    borderColor: 'rgba(var(--sa-fire-deep-rgb),.5)',
+  },
+  speed: {
+    color: 'var(--sa-cyan)',
+    background: 'rgba(var(--sa-cyan-rgb),.12)',
+    borderColor: 'rgba(var(--sa-cyan-rgb),.45)',
+  },
+  fame: {
+    color: 'var(--sa-gold-bright)',
+    background: 'rgba(var(--sa-gold-rgb),.12)',
+    borderColor: 'rgba(var(--sa-gold-rgb),.5)',
+  },
+}
+
+function statusChips(status) {
+  if (!status) return []
+  const chips = []
+  if (status.is_on_fire) chips.push({ key: 'fire', glyph: '🔥', label: 'ON FIRE', style: CHIP_STYLES.fire })
+  if (status.is_speed_runner)
+    chips.push({ key: 'speed', glyph: '⚡', label: 'SPEED RUNNER', style: CHIP_STYLES.speed })
+  if (status.is_on_all_house_fame)
+    chips.push({ key: 'fame', glyph: '⭐', label: 'HALL OF FAME', style: CHIP_STYLES.fame })
+  ;(status.trophies || []).forEach((t, i) => {
+    const g = TROPHY_GLYPHS[t.id] || { icon: '🏆', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' }
+    chips.push({
+      key: `trophy-${t.id ?? i}`,
+      glyph: g.icon,
+      label: t.name || t.id || 'Trophy',
+      style: { color: g.c, background: alpha(g.rgb, 0.1), borderColor: alpha(g.rgb, 0.42) },
+    })
+  })
+  return chips
+}
+
+// The profiled row, resolved live from the leaderboard view-model so the header
+// tracks score / rank / status as the player acts. Returns null when the drawer
+// is closed or the player has left the roster (which closes the drawer). The
+// early null return keeps it off the 1s clock while closed — it only reads
+// `players` (and thus `now`) once a player is selected.
+export const selectedPlayer = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+  const row = players.value.find((r) => r.id === id)
+  if (!row) return null
+  const status = progresses.value?.[id]?.status
+  return {
+    id: row.id,
+    name: row.name,
+    org: row.org,
+    rank: row.rank,
+    top: row.top,
+    score: row.score,
+    maxScore: row.maxScore,
+    complete: row.complete,
+    chips: statusChips(status),
+  }
+})
+
+/* ------------------------------------------------------------------ */
 /* Per-task completion — the class-wide "which task is the wall?"      */
 /* ------------------------------------------------------------------ */
 // For the selected exercise, the fraction of participants who have cleared each

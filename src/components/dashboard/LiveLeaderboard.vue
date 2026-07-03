@@ -11,6 +11,8 @@ import {
   sortByScore,
   autoPaginate,
   selectedExercise,
+  selectedPlayerId,
+  openPlayer,
   ROW_HEIGHT,
 } from './dashboardState.js'
 
@@ -25,6 +27,15 @@ function toggleTask(player, task) {
   if (!userAuthenticated.value || !selectedExercise.value) return
   // setCompletedState toggles based on the current completion state (task.done).
   setCompletedState(task.done, player.id, selectedExercise.value.uuid, task.uuid)
+}
+
+// A square click stops propagation *only when authenticated*, so an admin
+// toggling completion doesn't also open the drawer; a viewer's square click
+// falls through to the row handler and opens the drawer like any other row hit.
+function onSquareClick(player, task, e) {
+  if (!userAuthenticated.value) return
+  e.stopPropagation()
+  toggleTask(player, task)
 }
 
 // "Being validated" — the backend re-checks a trainee's injects when they act
@@ -89,6 +100,10 @@ function measure() {
 }
 
 function rotatePage() {
+  // Hold the current page while the drill-down drawer is open — its backdrop
+  // hides most of the board, so silently cycling to pages nobody can see would
+  // just leave a stale page showing on close. Rotation resumes once it closes.
+  if (selectedPlayerId.value !== null) return
   if (!autoPaginate.value) {
     currentPage.value = 0
     return
@@ -193,10 +208,17 @@ onUnmounted(() => {
           }"
         >
           <div
+            class="sa-row"
+            role="button"
+            tabindex="0"
+            :aria-label="`Open ${p.name} details`"
             style="display:flex;align-items:center;gap:14px;width:100%;height:50px;padding:0 8px 0 0;border-radius:12px;"
             :style="{ border: `1px solid ${p.rowBorder}`, background: p.rowBg, boxShadow: p.glow, animation: p.rowAnim }"
             @mouseenter="onRowEnter(p.id)"
             @mouseleave="onRowLeave(p.id)"
+            @click="openPlayer(p.id)"
+            @keydown.enter.prevent="openPlayer(p.id)"
+            @keydown.space.prevent="openPlayer(p.id)"
           >
             <!-- rank -->
             <div style="width:46px;display:flex;align-items:center;justify-content:center;">
@@ -242,7 +264,7 @@ onUnmounted(() => {
                   :title="userAuthenticated ? `${t.name} — click to mark ${t.done ? 'incomplete' : 'completed'}` : t.name"
                   style="flex:1;position:relative;border-radius:5px;"
                   :style="{ background: t.bg, border: `1px solid ${t.border}`, boxShadow: t.glow }"
-                  @click="toggleTask(p, t)"
+                  @click="onSquareClick(p, t, $event)"
                 >
                   <span v-if="checkingTask(p, t)" class="sa-task-spin" title="Being validated…"></span>
                   <span v-else-if="t.avail" class="sa-blink" style="position:absolute;top:50%;left:50%;width:5px;height:5px;margin:-2.5px 0 0 -2.5px;border-radius:50%;background:var(--sa-cyan);"></span>
@@ -305,6 +327,15 @@ onUnmounted(() => {
   border: none;
   border-radius: 0;
   background: var(--sa-bg-base);
+}
+/* whole row is a button opening the drill-down drawer (task squares stop the
+   click for admins — see onSquareClick) */
+.sa-row {
+  cursor: pointer;
+}
+.sa-row:focus-visible {
+  outline: 2px solid var(--sa-cyan);
+  outline-offset: 2px;
 }
 .sa-task {
   transition: filter 0.15s ease, transform 0.1s ease;

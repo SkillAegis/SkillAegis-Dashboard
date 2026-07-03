@@ -5,6 +5,7 @@ import LiveLeaderboard from './components/dashboard/LiveLeaderboard.vue'
 import HallOfFame from './components/dashboard/HallOfFame.vue'
 import ChampionsSlot from './components/dashboard/ChampionsSlot.vue'
 import LiveFeed from './components/dashboard/LiveFeed.vue'
+import PlayerDrawer from './components/dashboard/PlayerDrawer.vue'
 import { resetState, fullReload, socketConnected } from './socket'
 import { shouldHideGamification } from './components/dashboard/dashboardState.js'
 
@@ -37,6 +38,11 @@ onMounted(() => {
         <LiveFeed />
       </aside>
     </div>
+
+    <!-- Right-edge drill-down drawer + dimming backdrop. Mounted at the root so
+         its overlay covers the viewport above the grid; a pure view over
+         selectedPlayer (renders nothing while closed). -->
+    <PlayerDrawer />
   </div>
 </template>
 
