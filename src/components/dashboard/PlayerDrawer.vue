@@ -16,10 +16,11 @@
  * Vue freezes the leaving DOM rather than re-rendering it against a null player.
  */
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
-import { selectedPlayer, closePlayer } from './dashboardState.js'
+import { selectedPlayer, selectedPlayerTasks, closePlayer } from './dashboardState.js'
 import { reduceMotionOn } from '@/settings.js'
 
 const player = selectedPlayer
+const tasks = selectedPlayerTasks
 const open = computed(() => player.value !== null)
 
 const drawerRef = ref(null)
@@ -137,7 +138,89 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               <span v-if="!player.chips.length" class="sa-chip sa-chip-none">no badges yet</span>
             </div>
           </div>
-          <!-- Per-task timing (Phase 2) and last-seen + activity (Phase 3) render here. -->
+          <!-- per-task timing & gaps (Phase 2) -->
+          <div v-if="tasks" class="sa-sec">
+            <div class="sa-sec-h">
+              <span class="sa-sec-ttl">TASK TIMING</span>
+              <span class="sa-sec-sub sa-mono">time per task · gap to previous</span>
+            </div>
+            <div class="sa-tsum sa-mono">
+              <template v-if="tasks.cleared">
+                <span class="sa-tsum-big">CLEARED</span> all {{ tasks.total }} · total clear
+                <span class="sa-tsum-clr">{{ tasks.clearTime }}</span>
+              </template>
+              <template v-else>
+                <span class="sa-tsum-big">{{ tasks.done }}/{{ tasks.total }}</span> tasks<template
+                  v-if="tasks.onPos"
+                >
+                  · on task {{ tasks.onPos }}</template
+                >
+              </template>
+              <span class="sa-tbar"><i :style="{ width: tasks.pct + '%' }"></i></span>
+            </div>
+            <div class="sa-tlist">
+              <div
+                v-for="t in tasks.tasks"
+                :key="t.key"
+                class="sa-trow"
+                :class="'sa-trow-' + t.state"
+              >
+                <div class="sa-tmk sa-mono">{{ t.num }}</div>
+                <div class="sa-tn">
+                  <div class="sa-tnm">{{ t.name }}</div>
+                  <div v-if="t.state === 'now'" class="sa-tmeta sa-mono">
+                    <span class="sa-pulse"></span>
+                    <template v-if="t.onNow"
+                      >current task<template v-if="t.sinceLabel"> · started {{ t.sinceLabel }} ago</template></template
+                    >
+                    <template v-else>current task · <span class="sa-fb">stalled</span></template>
+                  </div>
+                  <div v-else-if="t.state === 'lock' && t.reqPos" class="sa-tmeta sa-mono">
+                    requires task {{ t.reqPos }}
+                  </div>
+                  <div v-else-if="t.state === 'done' && t.firstBlood" class="sa-tmeta sa-mono">
+                    <span class="sa-fb">🩸 first blood</span>
+                  </div>
+                </div>
+                <div class="sa-trt">
+                  <template v-if="t.state === 'done'">
+                    <div class="sa-tat sa-mono" :title="t.atTitle">{{ t.atLabel }}</div>
+                    <span class="sa-gap sa-mono" :class="t.gapClass" :title="t.gapTitle">{{ t.gapLabel }}</span>
+                  </template>
+                  <template v-else-if="t.state === 'now'">
+                    <span
+                      v-if="t.onNow"
+                      class="sa-gap sa-gap-now sa-mono"
+                      title="Currently working on this task — not yet completed"
+                      >on now</span
+                    >
+                    <span
+                      v-else
+                      class="sa-gap sa-gap-stall sa-mono"
+                      :title="`Stalled — no completion or activity${t.sinceLabel ? ' for ' + t.sinceLabel : ''}`"
+                      >idle{{ t.sinceLabel ? ' ' + t.sinceLabel : '' }}</span
+                    >
+                  </template>
+                  <template v-else-if="t.state === 'avail'">
+                    <span
+                      class="sa-gap sa-gap-avail sa-mono"
+                      title="Unlocked — available, not yet started"
+                      >available</span
+                    >
+                  </template>
+                  <template v-else>
+                    <div class="sa-tat sa-mono">—</div>
+                    <span
+                      class="sa-gap sa-gap-lock sa-mono"
+                      :title="t.reqPos ? `Locked — task ${t.reqPos} must be completed first` : 'Locked — prerequisite not met'"
+                      >🔒</span
+                    >
+                  </template>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Last-seen + activity (Phase 3) renders here. -->
         </div>
 
         <!-- events rail shell — populated from the per-user backend history in Phase 4 -->
@@ -368,6 +451,207 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   border-color: rgba(110, 130, 160, 0.28);
   background: rgba(var(--sa-bg-rgb), 0.5);
   color: var(--sa-text-5);
+}
+
+/* section scaffold (shared by Phase 2/3 sections in the main column) */
+.sa-sec {
+  padding: 15px 24px;
+  border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.09);
+}
+.sa-sec-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.sa-sec-ttl {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: var(--sa-text-3);
+}
+.sa-sec-sub {
+  font-size: 10px;
+  color: var(--sa-text-6);
+  margin-left: auto;
+}
+
+/* task timing list */
+.sa-tsum {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 11px;
+  font-size: 11px;
+  color: var(--sa-text-4);
+}
+.sa-tsum-big {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--sa-text-2);
+}
+.sa-tsum-clr {
+  color: var(--sa-gold-bright);
+  font-weight: 800;
+}
+.sa-tbar {
+  flex: 1;
+  max-width: 340px;
+  height: 6px;
+  border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), 0.1);
+  overflow: hidden;
+}
+.sa-tbar > i {
+  display: block;
+  height: 100%;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #2b7bd6, var(--sa-cyan), var(--sa-mint));
+  box-shadow: 0 0 10px rgba(var(--sa-cyan-rgb), 0.45);
+}
+.sa-tlist {
+  display: flex;
+  flex-direction: column;
+}
+.sa-trow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 9px;
+}
+.sa-trow + .sa-trow {
+  border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.055);
+}
+.sa-tmk {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+.sa-trow-done .sa-tmk {
+  background: linear-gradient(180deg, var(--sa-cyan), var(--sa-mint));
+  color: var(--sa-ink);
+}
+.sa-trow-now .sa-tmk {
+  background: rgba(var(--sa-cyan-rgb), 0.14);
+  border: 1px solid var(--sa-cyan);
+  color: var(--sa-cyan);
+  box-shadow: 0 0 8px rgba(var(--sa-cyan-rgb), 0.5);
+}
+.sa-trow-avail .sa-tmk {
+  background: rgba(var(--sa-cyan-rgb), 0.06);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.3);
+  color: var(--sa-text-4);
+}
+.sa-trow-lock .sa-tmk {
+  background: rgba(var(--sa-cyan-rgb), 0.04);
+  border: 1px solid rgba(110, 130, 160, 0.28);
+  color: var(--sa-text-6);
+}
+.sa-tn {
+  flex: 1;
+  min-width: 0;
+}
+.sa-tnm {
+  font-size: 13.5px;
+  color: var(--sa-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sa-trow-now .sa-tnm {
+  color: var(--sa-cyan);
+  font-weight: 600;
+}
+.sa-trow-avail .sa-tnm {
+  color: var(--sa-text-3);
+}
+.sa-trow-lock .sa-tnm {
+  color: var(--sa-text-5);
+}
+.sa-tmeta {
+  font-size: 10px;
+  color: var(--sa-text-6);
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sa-fb {
+  color: var(--sa-danger);
+  font-weight: 800;
+}
+.sa-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--sa-cyan);
+  box-shadow: 0 0 7px rgba(var(--sa-cyan-rgb), 0.8);
+  animation: sa-drawer-blink 1.3s infinite;
+}
+.sa-trt {
+  text-align: right;
+  flex: none;
+}
+.sa-tat {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--sa-text-2);
+}
+.sa-trow-lock .sa-tat {
+  color: var(--sa-text-6);
+  font-weight: 400;
+}
+.sa-gap {
+  display: inline-block;
+  margin-top: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 5px;
+  color: var(--sa-text-4);
+  background: rgba(var(--sa-cyan-rgb), 0.09);
+}
+.sa-gap.slow {
+  color: var(--sa-gold);
+  background: rgba(var(--sa-gold-rgb), 0.1);
+}
+.sa-gap-now {
+  color: var(--sa-cyan);
+  background: rgba(var(--sa-cyan-rgb), 0.14);
+}
+.sa-gap-stall {
+  color: var(--sa-danger);
+  background: rgba(var(--sa-danger-rgb), 0.12);
+}
+.sa-gap-avail {
+  color: var(--sa-text-4);
+  background: rgba(var(--sa-cyan-rgb), 0.07);
+}
+.sa-gap-lock {
+  color: var(--sa-text-6);
+  background: rgba(110, 130, 160, 0.12);
+}
+@keyframes sa-drawer-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sa-pulse {
+    animation: none;
+  }
 }
 
 /* events rail */

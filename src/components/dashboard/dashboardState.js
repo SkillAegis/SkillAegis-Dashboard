@@ -528,6 +528,140 @@ export const selectedPlayer = computed(() => {
   }
 })
 
+// A completion gap this many times the player's median gap (or longer) is
+// flagged "slow" — a soft monitoring hint on the timing list, not a hard rule.
+const SLOW_GAP_FACTOR = 1.5
+
+// Per-task timing profile for the drill-down drawer (Phase 2): each task of the
+// selected exercise, in order, with its state (done / on-now / locked), the time
+// into the exercise it was completed, and the gap to the previous completion.
+//
+// Gaps mirror the backend exactly (leaderboard.py
+// `get_sorted_timestamps_for_completed_tasks` + the ascending sort in
+// `get_user_completion_time`): collect the completed timestamps, sort ascending,
+// and gap[i] = t[i] − t[i−1]; the first completion's gap is measured from
+// `exerciseStart` — the same earliest-completion anchor `elapsed` / `finishers`
+// use. "On now" = an available task (prerequisites met, not yet done); "locked"
+// = a task whose prerequisite is unmet.
+//
+// Returns null when the drawer is closed or the player/exercise is gone, so it
+// stays off the 1s clock while closed; once open it reads `now` only for the
+// live "started N ago" / "idle N" labels on the current task(s), and touches one
+// player's handful of tasks — far below the O(P×T) roster passes item 6 guards.
+export const selectedPlayerTasks = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+  const ex = selectedExercise.value
+  if (!ex) return null
+  const prog = progresses.value?.[id]?.exercises?.[ex.uuid]
+  if (!prog) return null
+
+  const tc = prog.tasks_completion || {}
+  const start = exerciseStart.value
+  const nowMs = now.value
+
+  // Completed timestamps in ascending order → per-task gap to the previous
+  // completion (the earliest is measured from the exercise-start anchor).
+  const doneTs = []
+  for (const task of ex.tasks) {
+    const c = tc[task.uuid]
+    if (c && c.timestamp) doneTs.push({ uuid: task.uuid, ts: c.timestamp * 1000 })
+  }
+  doneTs.sort((a, b) => a.ts - b.ts)
+  const gapByUuid = {}
+  let prev = start
+  doneTs.forEach((d, i) => {
+    const base = i === 0 ? start : prev
+    gapByUuid[d.uuid] = { ms: base !== null ? Math.max(0, d.ts - base) : null, first: i === 0 }
+    prev = d.ts
+  })
+
+  // Median gap → the "slow" threshold. Skip it until there are enough samples
+  // for a median to mean anything (a 1–2 task player has no baseline).
+  const gapVals = doneTs.map((d) => gapByUuid[d.uuid].ms).filter((m) => m !== null)
+  const sortedGaps = [...gapVals].sort((a, b) => a - b)
+  const median = sortedGaps.length ? sortedGaps[Math.floor((sortedGaps.length - 1) / 2)] : 0
+  const slowThreshold = sortedGaps.length >= 3 && median > 0 ? median * SLOW_GAP_FACTOR : Infinity
+
+  // Count done the leaderboard way (any non-false completion) so the drawer's
+  // "N/total" always agrees with the row badge; gap math still uses the
+  // timestamped `doneTs` (identical in practice — completions carry timestamps).
+  const total = ex.tasks.length
+  const doneCount = ex.tasks.filter((t) => {
+    const c = tc[t.uuid]
+    return c !== undefined && c !== false
+  }).length
+  const lastMs = doneTs.length ? doneTs[doneTs.length - 1].ts : null
+  const cleared = total > 0 && doneCount >= total
+  const active = isActive(id)
+
+  // Reference for the current task's live label: how long since the player last
+  // made progress (their last completion, else the exercise start).
+  const refMs = lastMs ?? start
+  const sinceLabel = refMs !== null ? fmtAgo(Math.max(0, nowMs - refMs)) : null
+
+  const posByUuid = {}
+  ex.tasks.forEach((t, i) => (posByUuid[t.uuid] = i + 1))
+
+  let onPos = null
+  const tasks = ex.tasks.map((task, i) => {
+    const pos = i + 1
+    const c = tc[task.uuid]
+    const isDone = c !== undefined && c !== false
+    if (isDone) {
+      const g = gapByUuid[task.uuid]
+      const atMs = c.timestamp ? c.timestamp * 1000 : null
+      const atLabel = atMs !== null && start !== null ? fmtDur(atMs - start) : '—'
+      const gapMs = g?.ms ?? null
+      return {
+        key: task.uuid,
+        pos,
+        num: '✓',
+        name: task.name,
+        state: 'done',
+        firstBlood: c.first_completion === true,
+        atLabel,
+        atTitle: atLabel !== '—' ? `Completed at ${atLabel} into the exercise` : 'Completed',
+        gapLabel: gapMs !== null ? '+' + fmtClock(gapMs / 1000) : '—',
+        gapClass: gapMs !== null && gapMs >= slowThreshold ? 'slow' : '',
+        gapTitle: g?.first
+          ? 'Time to first completion — measured from the exercise start'
+          : 'Time on this task — elapsed between the previous completion and this one',
+      }
+    }
+    if (taskRequirementMet(tc, task)) {
+      // Only the first open task is the highlighted "current" one; further
+      // unlocked-but-undone tasks (a no-prerequisite exercise unlocks them all
+      // at once) render as quieter "available" rows. A linear chain only ever
+      // has one open task, so it always reads as a single current task.
+      if (onPos === null) {
+        onPos = pos
+        return { key: task.uuid, pos, num: pos, name: task.name, state: 'now', onNow: active, sinceLabel }
+      }
+      return { key: task.uuid, pos, num: pos, name: task.name, state: 'avail' }
+    }
+    const reqUuid = task.requirements?.inject_uuid
+    return {
+      key: task.uuid,
+      pos,
+      num: pos,
+      name: task.name,
+      state: 'lock',
+      reqPos: reqUuid ? posByUuid[reqUuid] ?? null : null,
+    }
+  })
+
+  return {
+    tasks,
+    done: doneCount,
+    total,
+    pct: total ? Math.round((doneCount / total) * 100) : 0,
+    cleared,
+    clearTime: cleared && lastMs !== null && start !== null ? fmtDur(lastMs - start) : null,
+    onPos,
+  }
+})
+
 /* ------------------------------------------------------------------ */
 /* Per-task completion — the class-wide "which task is the wall?"      */
 /* ------------------------------------------------------------------ */
