@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — Phase 1 done (2026-07-03); Phase 2 next |
+| **Status** | In progress — Phase 2 done (2026-07-05); Phase 3 next |
 | **Date** | 2026-07-03 |
 | **Scope** | SkillAegis-Dashboard frontend (`src/components/dashboard/*`, `src/socket.js`) **and** a backend addition for per-user event history (`backend/db.py`, `backend/notification.py`, `backend/server.py`) plus matching mock support (`backend/dev_mock_server.py`). |
 | **Non-goals** | No change to the evaluation engine, scoring math, or scenario format. The Socket.IO contract gains exactly **one** request/ack event (`get_user_events`); no new server-push event — live event updates ride the existing `notification` push. No change to any existing event. |
@@ -115,7 +115,7 @@ Resolving the prior "Open questions":
 |---|---|---|---|---|---|
 | 0 | Design proposal & validation | Design | Small | — | ✅ Done (d4d7074) |
 | 1 | Drawer shell + header | Frontend | Medium | Med | ✅ Done (5c746d0) |
-| 2 | Per-task timing & gaps | Frontend | Medium | Low | ⬜ Not started |
+| 2 | Per-task timing & gaps | Frontend | Medium | Low | ✅ Done (454b11f) |
 | 3 | Last-seen & activity sparkline | Frontend | Small | Low | ⬜ Not started |
 | 4 | Recent events (backend per-user history + frontend) | Full-stack | Large | Med | ⬜ Not started |
 
@@ -227,7 +227,34 @@ Turn the drawer into a timing profile for the selected exercise.
   available task(s).
 - The list updates live as the player completes tasks.
 
-**Status: ⬜ Not started.**
+**Status: ✅ Done — 454b11f.** New `selectedPlayerTasks` selector in
+`dashboardState.js` producing each task in order with state (done / current /
+available / locked), completion time into the exercise, and gap to the previous
+completion — gaps mirror the backend (collect completed timestamps, sort
+ascending, `gap[i] = t[i] − t[i−1]`; the first measured from `exerciseStart`).
+A gap ≥ 1.5× the player's median gap is flagged "slow" (skipped until ≥3
+samples). Done-count matches the leaderboard (any non-false completion) so the
+drawer's `N/total` agrees with the row badge. `PlayerDrawer.vue` renders the
+TASK TIMING section (summary + progress bar + task list) ported from the Variant
+B mockup, with explanatory `title` tooltips on the timing/gap chips (first-vs-
+subsequent, "on now" / idle-stalled, locked) and a CLEARED total-clear line for
+finishers. Verified running on the mock via headless Chrome (CDP): done
+times/gaps + correct tooltips, single current task + quieter available rows on
+the no-prerequisite exercise, locked rows ("requires task N") on the linear-chain
+exercise, and the CLEARED / total-clear summary on a finished player.
+
+**Open-task rendering decision (2026-07-05):** the PRD's "available task(s)"
+was ambiguous for a no-prerequisite exercise (every undone task unlocks at
+once). Resolved with the design owner → **only the first open task is the
+highlighted "current" one** (pulse + on-now/idle chip); further unlocked-but-
+undone tasks render as quieter **"available"** rows. A linear chain has only one
+open task, so it always reads as a single current task — matching the signed-off
+Variant B mockup, which never showed a non-current available task.
+
+The idle/stalled variant of the current-task chip (player inactive) was
+logic-verified only — the frozen mock seed had no inactive participant to observe
+it live; it is a symmetric `v-else` of the confirmed "on now" branch, gated on
+the same `isActive` helper the leaderboard uses.
 
 ---
 
