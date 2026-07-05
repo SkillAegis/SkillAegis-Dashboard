@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — Phase 2 done (2026-07-05); Phase 3 next |
+| **Status** | In progress — Phase 3 done (2026-07-05); Phase 4 next |
 | **Date** | 2026-07-03 |
 | **Scope** | SkillAegis-Dashboard frontend (`src/components/dashboard/*`, `src/socket.js`) **and** a backend addition for per-user event history (`backend/db.py`, `backend/notification.py`, `backend/server.py`) plus matching mock support (`backend/dev_mock_server.py`). |
 | **Non-goals** | No change to the evaluation engine, scoring math, or scenario format. The Socket.IO contract gains exactly **one** request/ack event (`get_user_events`); no new server-push event — live event updates ride the existing `notification` push. No change to any existing event. |
@@ -116,7 +116,7 @@ Resolving the prior "Open questions":
 | 0 | Design proposal & validation | Design | Small | — | ✅ Done (d4d7074) |
 | 1 | Drawer shell + header | Frontend | Medium | Med | ✅ Done (5c746d0) |
 | 2 | Per-task timing & gaps | Frontend | Medium | Low | ✅ Done (454b11f) |
-| 3 | Last-seen & activity sparkline | Frontend | Small | Low | ⬜ Not started |
+| 3 | Last-seen & activity sparkline | Frontend | Small | Low | ✅ Done (84fcba7) |
 | 4 | Recent events (backend per-user history + frontend) | Full-stack | Large | Med | ⬜ Not started |
 
 Phase 0 is a pre-build gate — no production code until the look is signed off. Phases 1–4 are each a
@@ -276,7 +276,32 @@ the same `isActive` helper the leaderboard uses.
 - Last-seen matches the activity buffer; the sparkline reflects the buckets.
 - Both update live on `update_users_activity`.
 
-**Status: ⬜ Not started.**
+**Status: ✅ Done — 84fcba7.** New `selectedPlayerActivity` selector in
+`dashboardState.js` derives, from `userActivity[selectedPlayerId]` +
+`userActivityConfig`: the last-seen line and a mini sparkline. Bucket duration =
+`60 / buffer_resolution_per_minute` seconds, matching the backend ring cadence
+(`server.py record_users_activity`, `USER_ACTIVITY_FREQUENCY = 60 / resolution`).
+The newest non-zero bucket gives "last seen N ago" (`fmtAgo`); "active now"
+reuses the leaderboard's last-quarter `isActive` window; an all-zero / empty
+buffer reads "no activity". The sparkline reuses the row heat ramp (`heatColor` +
+a new 4-tier `heatLevel`) so bar colour and height match the leaderboard's heat
+squares, and the axis / sub labels are derived from the config (`−{timestamp_min}
+min` … `now`; `{size} buckets · ~{bucketSec}s each`). The selector reads only the
+activity buffer, so it recomputes on the `update_users_activity` push (not the 1s
+clock) and the "N ago" label steps in whole buckets rather than drifting.
+`PlayerDrawer.vue` renders the LAST SEEN & ACTIVITY section (status dot + text,
+horizontal sparkline, axis) ported from the Variant B mockup, below the Phase 2
+task-timing section; the `on` dot pulse honours reduced motion.
+
+Verified on the mock via headless Chrome (CDP): the section renders for a live
+player (32 buckets, derived `−16 min … now` axis and `32 buckets · ~30s each`
+sub, quantized bar heights) and updates live as the ring advances on
+`update_users_activity` while the drawer stays open on the same player. The
+seed-1 world seeds every buffer ~half-full, so no participant is idle/empty to
+observe live — the off ("last seen N ago") and cold ("no activity") branches plus
+the whole-bucket "N ago" math (including the active-window edge) and the
+real-backend 20-min config were verified with a deterministic logic-replica test
+(13/13).
 
 ---
 
