@@ -30,7 +30,7 @@ import {
   socketConnected,
   zmqLastTime,
   toggleVerboseMode,
-  toggleApiQueryMode,
+  toggleApiQueryMode
 } from '@/socket'
 
 /* ------------------------------------------------------------------ */
@@ -164,6 +164,17 @@ function heatColor(v) {
   return 'var(--sa-cyan)'
 }
 
+// The row heat treatment is quantized into four intensity tiers (see heatColor);
+// mirror that ramp as a 0–3 level so the activity sparkline's bar heights follow
+// the same steps as the leaderboard's heat squares (and don't run off with a
+// single very busy bucket, the way a raw-magnitude scale would).
+function heatLevel(v) {
+  if (v <= 0) return 0
+  if (v <= 1) return 1
+  if (v <= 2) return 2
+  return 3
+}
+
 // Build an rgba() string from a `--x-rgb` channel-triple token and an alpha,
 // e.g. alpha('var(--sa-gold-rgb)', 0.13) → "rgba(var(--sa-gold-rgb), 0.13)".
 function alpha(rgbVar, a) {
@@ -250,7 +261,9 @@ watch(
       }
       prevScores[key] = score
 
-      const done = Object.values(exProgress.tasks_completion || {}).filter((t) => t !== false).length
+      const done = Object.values(exProgress.tasks_completion || {}).filter(
+        (t) => t !== false
+      ).length
       const prevD = prevDone[key]
       if (prevD !== undefined && tasksLen > 0 && prevD < tasksLen && done >= tasksLen) {
         completions[p.user_id] = { at: Date.now() }
@@ -321,7 +334,7 @@ const playersBase = computed(() => {
               ? 'rgba(var(--sa-cyan-rgb),.12)'
               : 'rgba(var(--sa-cyan-rgb),.04)',
           border: isDone ? 'transparent' : avail ? 'var(--sa-cyan)' : 'rgba(110,130,160,.28)',
-          glow: avail ? '0 0 7px rgba(var(--sa-cyan-rgb),.45)' : 'none',
+          glow: avail ? '0 0 7px rgba(var(--sa-cyan-rgb),.45)' : 'none'
         }
       })
 
@@ -346,7 +359,7 @@ const playersBase = computed(() => {
         tasks,
         fireEligible,
         fireUntil,
-        fireStart,
+        fireStart
       }
     })
 
@@ -387,7 +400,7 @@ const playersBase = computed(() => {
         : top
           ? 'rgba(var(--sa-gold-rgb),.22)'
           : 'rgba(var(--sa-cyan-rgb),.08)',
-      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none',
+      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none'
     }
   })
 })
@@ -398,7 +411,10 @@ export const players = computed(() => {
     const onFire = r.fireEligible && r.fireUntil > nowMs
     const fireBarPct =
       onFire && r.fireUntil > r.fireStart
-        ? Math.max(0, Math.min(100, Math.round(((r.fireUntil - nowMs) / (r.fireUntil - r.fireStart)) * 100)))
+        ? Math.max(
+            0,
+            Math.min(100, Math.round(((r.fireUntil - nowMs) / (r.fireUntil - r.fireStart)) * 100))
+          )
         : 0
 
     const g = gains[r.id]
@@ -440,7 +456,7 @@ export const players = computed(() => {
         ? '0 0 0 1px rgba(var(--sa-gold-rgb),.4),0 0 24px rgba(var(--sa-mint-rgb),.22)'
         : just
           ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
-          : 'none',
+          : 'none'
     }
   })
 })
@@ -470,24 +486,25 @@ const CHIP_STYLES = {
   fire: {
     color: 'var(--sa-fire-mid)',
     background: 'rgba(var(--sa-fire-mid-rgb),.14)',
-    borderColor: 'rgba(var(--sa-fire-deep-rgb),.5)',
+    borderColor: 'rgba(var(--sa-fire-deep-rgb),.5)'
   },
   speed: {
     color: 'var(--sa-cyan)',
     background: 'rgba(var(--sa-cyan-rgb),.12)',
-    borderColor: 'rgba(var(--sa-cyan-rgb),.45)',
+    borderColor: 'rgba(var(--sa-cyan-rgb),.45)'
   },
   fame: {
     color: 'var(--sa-gold-bright)',
     background: 'rgba(var(--sa-gold-rgb),.12)',
-    borderColor: 'rgba(var(--sa-gold-rgb),.5)',
-  },
+    borderColor: 'rgba(var(--sa-gold-rgb),.5)'
+  }
 }
 
 function statusChips(status) {
   if (!status) return []
   const chips = []
-  if (status.is_on_fire) chips.push({ key: 'fire', glyph: '🔥', label: 'ON FIRE', style: CHIP_STYLES.fire })
+  if (status.is_on_fire)
+    chips.push({ key: 'fire', glyph: '🔥', label: 'ON FIRE', style: CHIP_STYLES.fire })
   if (status.is_speed_runner)
     chips.push({ key: 'speed', glyph: '⚡', label: 'SPEED RUNNER', style: CHIP_STYLES.speed })
   if (status.is_on_all_house_fame)
@@ -498,7 +515,7 @@ function statusChips(status) {
       key: `trophy-${t.id ?? i}`,
       glyph: g.icon,
       label: t.name || t.id || 'Trophy',
-      style: { color: g.c, background: alpha(g.rgb, 0.1), borderColor: alpha(g.rgb, 0.42) },
+      style: { color: g.c, background: alpha(g.rgb, 0.1), borderColor: alpha(g.rgb, 0.42) }
     })
   })
   return chips
@@ -524,7 +541,7 @@ export const selectedPlayer = computed(() => {
     score: row.score,
     maxScore: row.maxScore,
     complete: row.complete,
-    chips: statusChips(status),
+    chips: statusChips(status)
   }
 })
 
@@ -626,7 +643,7 @@ export const selectedPlayerTasks = computed(() => {
         gapClass: gapMs !== null && gapMs >= slowThreshold ? 'slow' : '',
         gapTitle: g?.first
           ? 'Time to first completion — measured from the exercise start'
-          : 'Time on this task — elapsed between the previous completion and this one',
+          : 'Time on this task — elapsed between the previous completion and this one'
       }
     }
     if (taskRequirementMet(tc, task)) {
@@ -636,7 +653,15 @@ export const selectedPlayerTasks = computed(() => {
       // has one open task, so it always reads as a single current task.
       if (onPos === null) {
         onPos = pos
-        return { key: task.uuid, pos, num: pos, name: task.name, state: 'now', onNow: active, sinceLabel }
+        return {
+          key: task.uuid,
+          pos,
+          num: pos,
+          name: task.name,
+          state: 'now',
+          onNow: active,
+          sinceLabel
+        }
       }
       return { key: task.uuid, pos, num: pos, name: task.name, state: 'avail' }
     }
@@ -647,7 +672,7 @@ export const selectedPlayerTasks = computed(() => {
       num: pos,
       name: task.name,
       state: 'lock',
-      reqPos: reqUuid ? posByUuid[reqUuid] ?? null : null,
+      reqPos: reqUuid ? posByUuid[reqUuid] ?? null : null
     }
   })
 
@@ -658,7 +683,61 @@ export const selectedPlayerTasks = computed(() => {
     pct: total ? Math.round((doneCount / total) * 100) : 0,
     cleared,
     clearTime: cleared && lastMs !== null && start !== null ? fmtDur(lastMs - start) : null,
-    onPos,
+    onPos
+  }
+})
+
+// Last-seen + activity sparkline for the drill-down drawer (Phase 3), derived
+// from the per-user activity buffer (`userActivity[id]`, oldest → newest bucket;
+// the rightmost bucket is "now") and its config (`userActivityConfig`). Bucket
+// duration = 60 / buffer_resolution_per_minute seconds, exactly as the backend
+// advances the ring (server.py `record_users_activity`, cadence
+// USER_ACTIVITY_FREQUENCY = 60 / resolution).
+//
+// - last non-zero bucket → "last seen N ago"; "active now" reuses the same
+//   `isActive` window the leaderboard uses (any activity in the last quarter),
+//   and an all-zero / empty buffer reads "no activity".
+// - the sparkline reuses the row heat ramp (heatColor + the 4-tier heatLevel),
+//   so a bar's colour and height match the leaderboard's heat squares.
+//
+// Returns null while the drawer is closed (keeps it off the compute path); once
+// open it reads only the activity buffer, so it recomputes on the
+// `update_users_activity` push, not the 1s clock — the "N ago" label is measured
+// in whole buckets, not wall-time, so it steps with the data rather than drifting.
+export const selectedPlayerActivity = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+
+  const cfg = userActivityConfig.value || {}
+  const resPerMin = cfg.buffer_resolution_per_minute || 0
+  const bucketSec = resPerMin > 0 ? 60 / resPerMin : 0
+
+  const act = userActivity.value?.[id] || []
+  const size = act.length
+
+  const bars = act.map((v) => ({ h: 18 + heatLevel(v) * 24, bg: heatColor(v) }))
+
+  // Newest non-zero bucket → how many whole buckets back the player was last seen.
+  let lastIdx = -1
+  for (let i = size - 1; i >= 0; i--) {
+    if (act[i] > 0) {
+      lastIdx = i
+      break
+    }
+  }
+  const hasActivity = lastIdx >= 0
+  const active = isActive(id)
+  const agoMs = hasActivity && bucketSec ? (size - 1 - lastIdx) * bucketSec * 1000 : null
+
+  const seenState = !hasActivity ? 'cold' : active ? 'on' : 'off'
+  const windowMin = cfg.timestamp_min || (bucketSec ? Math.round((size * bucketSec) / 60) : 0)
+
+  return {
+    bars,
+    seenState,
+    seenAgo: seenState === 'off' && agoMs !== null ? fmtAgo(agoMs) : null,
+    axisLeft: windowMin ? `−${windowMin} min` : '',
+    axisSub: size ? `${size} buckets · ~${Math.round(bucketSec)}s each` : 'no activity data'
   }
 })
 
@@ -700,7 +779,7 @@ export const taskCompletion = computed(() => {
       fg: tier.solid,
       barBg: `linear-gradient(180deg, ${tier.solid}, rgba(${tier.rgb}, .3))`,
       glow: `0 0 7px rgba(${tier.rgb}, .4)`,
-      title: `${task.name} — ${cleared} / ${n} cleared (${pct}%)`,
+      title: `${task.name} — ${cleared} / ${n} cleared (${pct}%)`
     }
   })
   return { tasks, participants: n }
@@ -717,7 +796,9 @@ export const globalProgress = computed(() => {
   for (const p of usersWithEx) {
     const exProgress = p.exercises[ex.uuid]
     collectiveScore += exProgress.score ?? 0
-    totalCompleted += Object.values(exProgress.tasks_completion || {}).filter((t) => t !== false).length
+    totalCompleted += Object.values(exProgress.tasks_completion || {}).filter(
+      (t) => t !== false
+    ).length
   }
   const denom = (usersWithEx.length || 1) * (ex?.tasks.length || 1)
   const globalPct = Math.max(0, Math.min(100, Math.round((totalCompleted / denom) * 100)))
@@ -776,15 +857,35 @@ export const connectionHealth = computed(() => {
   const ageMs = typeof lastSec === 'number' ? Math.max(0, now.value - lastSec * 1000) : null
 
   if (!socketConnected.value) {
-    return { state: 'offline', label: 'OFFLINE', color: 'var(--sa-danger)', tooltip: 'Offline · reconnecting…' }
+    return {
+      state: 'offline',
+      label: 'OFFLINE',
+      color: 'var(--sa-danger)',
+      tooltip: 'Offline · reconnecting…'
+    }
   }
   if (ageMs === null) {
-    return { state: 'idle', label: 'NO LIVE DATA', color: 'var(--sa-gold)', tooltip: 'Connected · waiting for data' }
+    return {
+      state: 'idle',
+      label: 'NO LIVE DATA',
+      color: 'var(--sa-gold)',
+      tooltip: 'Connected · waiting for data'
+    }
   }
   if (ageMs >= STALE_SEC * 1000) {
-    return { state: 'idle', label: 'NO LIVE DATA', color: 'var(--sa-gold)', tooltip: `No live data · last message ${fmtAgo(ageMs)} ago` }
+    return {
+      state: 'idle',
+      label: 'NO LIVE DATA',
+      color: 'var(--sa-gold)',
+      tooltip: `No live data · last message ${fmtAgo(ageMs)} ago`
+    }
   }
-  return { state: 'live', label: 'LIVE', color: 'var(--sa-mint)', tooltip: `Live · last message ${fmtAgo(ageMs)} ago` }
+  return {
+    state: 'live',
+    label: 'LIVE',
+    color: 'var(--sa-mint)',
+    tooltip: `Live · last message ${fmtAgo(ageMs)} ago`
+  }
 })
 
 /* ------------------------------------------------------------------ */
@@ -819,7 +920,7 @@ export const podium = computed(() => {
         barH: first ? 48 : r === 1 ? 34 : 24,
         barBg: first
           ? 'linear-gradient(180deg,var(--sa-gold),rgba(var(--sa-gold-rgb),.06))'
-          : `linear-gradient(180deg,${MEDALS[r]},rgba(199,211,230,.04))`,
+          : `linear-gradient(180deg,${MEDALS[r]},rgba(199,211,230,.04))`
       }
     })
 })
@@ -856,7 +957,9 @@ export const finishers = computed(() => {
   }
   if (!Number.isFinite(start)) start = 0
 
-  cleared.sort((a, b) => a.finishedAt - b.finishedAt || String(a.email).localeCompare(String(b.email)))
+  cleared.sort(
+    (a, b) => a.finishedAt - b.finishedAt || String(a.email).localeCompare(String(b.email))
+  )
   return cleared.map((d, i) => {
     const { name, org } = splitEmail(d.email)
     return {
@@ -866,7 +969,7 @@ export const finishers = computed(() => {
       rank: i + 1,
       first: i === 0,
       medal: MEDALS[i] || 'var(--sa-text-3)',
-      clear: d.finishedAt ? fmtDur(d.finishedAt - start) : '—',
+      clear: d.finishedAt ? fmtDur(d.finishedAt - start) : '—'
     }
   })
 })
@@ -894,7 +997,13 @@ const recentCompletions = computed(() => {
     if (!tc) continue
     for (const [taskUuid, c] of Object.entries(tc)) {
       if (!c || c === false || !c.timestamp) continue
-      items.push({ user_id: p.user_id, email: p.email, taskUuid, at: c.timestamp * 1000, first: c.first_completion === true })
+      items.push({
+        user_id: p.user_id,
+        email: p.email,
+        taskUuid,
+        at: c.timestamp * 1000,
+        first: c.first_completion === true
+      })
     }
   }
   items.sort((a, b) => b.at - a.at)
@@ -907,7 +1016,7 @@ const recentCompletions = computed(() => {
       name,
       org,
       at: it.at,
-      first: it.first,
+      first: it.first
     }
   })
 })
@@ -925,7 +1034,7 @@ export const justCleared = computed(() => {
     taskNum: it.taskNum,
     first: it.first,
     ago: fmtAgo(nowMs - it.at),
-    top: i === 0,
+    top: i === 0
   }))
 })
 
@@ -955,7 +1064,7 @@ function buildCard(ranked, fmt, fracOf) {
     name: splitEmail(e.email).name,
     val: fmt(e.v),
     v: e.v,
-    frac: Math.max(0, Math.min(100, Math.round(fracOf(e.v) * 100))),
+    frac: Math.max(0, Math.min(100, Math.round(fracOf(e.v) * 100)))
   }))
   return { leader, page, pages, cur }
 }
@@ -964,7 +1073,7 @@ const TROPHY_GLYPHS = {
   grinder: { icon: '⛏', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' },
   'bounce-back': { icon: '↺', c: 'var(--sa-mint)', rgb: 'var(--sa-mint-rgb)' },
   messenger: { icon: '✉', c: 'var(--sa-cyan)', rgb: 'var(--sa-cyan-rgb)' },
-  spammer: { icon: '◎', c: 'var(--sa-violet)', rgb: 'var(--sa-violet-rgb)' },
+  spammer: { icon: '◎', c: 'var(--sa-violet)', rgb: 'var(--sa-violet-rgb)' }
 }
 
 const DEFAULT_FIRE_WINDOW_SEC = 240
@@ -978,7 +1087,7 @@ const FIRE_TIERS = [
     fg: 'var(--sa-gold-bright)',
     bar: 'linear-gradient(90deg,var(--sa-fire-deep),#ffb24a 55%,#fff6d8)',
     glow: '0 0 16px rgba(var(--sa-fire-deep-rgb),.85)',
-    flameAnim: 'sa-flame .45s infinite',
+    flameAnim: 'sa-flame .45s infinite'
   },
   {
     min: 0.5,
@@ -986,7 +1095,7 @@ const FIRE_TIERS = [
     fg: '#ff9a5c',
     bar: 'linear-gradient(90deg,#ff7a3c,var(--sa-fire-deep))',
     glow: '0 0 12px rgba(var(--sa-fire-deep-rgb),.6)',
-    flameAnim: 'sa-flame .75s infinite',
+    flameAnim: 'sa-flame .75s infinite'
   },
   {
     min: 0.25,
@@ -994,7 +1103,7 @@ const FIRE_TIERS = [
     fg: 'var(--sa-fire-mid)',
     bar: 'linear-gradient(90deg,rgba(var(--sa-fire-mid-rgb),.55),var(--sa-fire-mid))',
     glow: '0 0 8px rgba(var(--sa-fire-mid-rgb),.5)',
-    flameAnim: 'sa-flame 1.1s infinite',
+    flameAnim: 'sa-flame 1.1s infinite'
   },
   {
     min: 0,
@@ -1002,8 +1111,8 @@ const FIRE_TIERS = [
     fg: '#e0a06a',
     bar: 'linear-gradient(90deg,rgba(255,178,74,.35),#ffb24a)',
     glow: 'none',
-    flameAnim: 'sa-flame 1.7s infinite',
-  },
+    flameAnim: 'sa-flame 1.7s infinite'
+  }
 ]
 
 function fireTier(fill) {
@@ -1023,7 +1132,7 @@ const SPEED_TIERS = [
     fg: '#eaffff',
     seg: '#cdf4ff',
     glow: '0 0 9px rgba(150,235,255,.95)',
-    boltAnim: 'sa-bolt .5s infinite',
+    boltAnim: 'sa-bolt .5s infinite'
   },
   {
     min: 0.5,
@@ -1031,7 +1140,7 @@ const SPEED_TIERS = [
     fg: '#7fe7ff',
     seg: '#4fd8ff',
     glow: '0 0 7px rgba(79,216,255,.7)',
-    boltAnim: 'sa-bolt .8s infinite',
+    boltAnim: 'sa-bolt .8s infinite'
   },
   {
     min: 0.25,
@@ -1039,7 +1148,7 @@ const SPEED_TIERS = [
     fg: 'var(--sa-cyan)',
     seg: 'var(--sa-cyan)',
     glow: '0 0 5px rgba(var(--sa-cyan-rgb),.5)',
-    boltAnim: 'sa-bolt 1.2s infinite',
+    boltAnim: 'sa-bolt 1.2s infinite'
   },
   {
     min: 0,
@@ -1047,8 +1156,8 @@ const SPEED_TIERS = [
     fg: '#6fa8c8',
     seg: '#3f7d9c',
     glow: 'none',
-    boltAnim: 'sa-bolt 1.8s infinite',
-  },
+    boltAnim: 'sa-bolt 1.8s infinite'
+  }
 ]
 
 function speedTier(frac) {
@@ -1068,7 +1177,11 @@ export const champions = computed(() => {
   const fireRanked = (userStats.value?.time_on_fire || [])
     .filter((e) => e.time_on_fire > 0)
     .map((e) => ({ email: e.email, v: e.time_on_fire }))
-  const fireCard = buildCard(fireRanked, (v) => fmtClock(v), (v) => v / maxEarnableFire)
+  const fireCard = buildCard(
+    fireRanked,
+    (v) => fmtClock(v),
+    (v) => v / maxEarnableFire
+  )
   const decorateFire = (item) => {
     const fill = Math.max(0, Math.min(1, item.v / maxEarnableFire))
     return { ...item, fill: Math.round(fill * 100), ...fireTier(fill) }
@@ -1088,7 +1201,11 @@ export const champions = computed(() => {
     userStats.value?.settings?.speedrunner_score_ceiling || speedRanked[0]?.v || 1
   )
   const speedIndex = (v) => Math.max(0, Math.min(10, (v / speedCeiling) * 10))
-  const speedCard = buildCard(speedRanked, (v) => speedIndex(v).toFixed(1), (v) => v / speedCeiling)
+  const speedCard = buildCard(
+    speedRanked,
+    (v) => speedIndex(v).toFixed(1),
+    (v) => v / speedCeiling
+  )
   const decorateSpeed = (item) => {
     const idx = speedIndex(item.v)
     const lit = Math.round(idx)
@@ -1096,7 +1213,7 @@ export const champions = computed(() => {
       ...item,
       fill: Math.round((idx / 10) * 100),
       segments: Array.from({ length: SPEED_SEGMENTS }, (_, i) => ({ on: i < lit })),
-      ...speedTier(idx / 10),
+      ...speedTier(idx / 10)
     }
   }
   const speedLeader = decorateSpeed(speedCard.leader)
@@ -1105,10 +1222,18 @@ export const champions = computed(() => {
   // Trophies — up to 4 holders
   const trophyObj = userStats.value?.trophies || {}
   const trophies = Object.entries(trophyObj).map(([id, t]) => {
-    const glyph = TROPHY_GLYPHS[id] || { icon: '🏆', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' }
+    const glyph = TROPHY_GLYPHS[id] || {
+      icon: '🏆',
+      c: 'var(--sa-gold)',
+      rgb: 'var(--sa-gold-rgb)'
+    }
     const winners = (t.users || []).map((u) => splitEmail(u.email).name)
     const holder =
-      winners.length === 0 ? '—' : winners.length <= 2 ? winners.join(', ') : `${winners[0]} +${winners.length - 1}`
+      winners.length === 0
+        ? '—'
+        : winners.length <= 2
+          ? winners.join(', ')
+          : `${winners[0]} +${winners.length - 1}`
     return {
       id,
       name: t.metadata?.name || id,
@@ -1116,7 +1241,7 @@ export const champions = computed(() => {
       fg: glyph.c,
       bg: alpha(glyph.rgb, 0.13),
       border: alpha(glyph.rgb, 0.4),
-      holder,
+      holder
     }
   })
 
@@ -1130,7 +1255,7 @@ export const champions = computed(() => {
     showFinishers: scene === 3,
     sceneDots: Array.from({ length: scenes }, (_, i) => ({
       bg: i === scene ? 'var(--sa-text-2)' : 'rgba(120,140,170,.3)',
-      w: i === scene ? 18 : 6,
+      w: i === scene ? 18 : 6
     })),
     slotBorder:
       scene === 0
@@ -1155,7 +1280,7 @@ export const champions = computed(() => {
     trophies,
     finishersCount: finishersList.length,
     finishersLeader: finishersList[0] || null,
-    finishersRest: finishersList.slice(1, 5),
+    finishersRest: finishersList.slice(1, 5)
   }
 })
 
@@ -1188,7 +1313,10 @@ function payloadToLines(payload) {
   return {
     keyCount: entries.length,
     isString: false,
-    lines: entries.map(([k, v]) => ({ k, v: typeof v === 'object' ? JSON.stringify(v) : String(v) })),
+    lines: entries.map(([k, v]) => ({
+      k,
+      v: typeof v === 'object' ? JSON.stringify(v) : String(v)
+    }))
   }
 }
 
@@ -1218,7 +1346,8 @@ export const feed = computed(() => {
     const hasPayload = isDisplayablePayload(e.payload)
     const { name } = splitEmail(e.user)
     const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
-    const expandable = pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
+    const expandable =
+      pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
     return {
       id: e.id,
       user: name,
@@ -1232,7 +1361,7 @@ export const feed = computed(() => {
       keyCount: pl.keyCount,
       payloadLines: pl.lines,
       payloadIsString: pl.isString,
-      expandable,
+      expandable
     }
   })
 })
@@ -1260,13 +1389,13 @@ export const timeline = computed(() => {
         : v === 0
           ? 'rgba(var(--sa-cyan-rgb),.1)'
           : 'linear-gradient(180deg,rgba(var(--sa-cyan-rgb),.85),rgba(var(--sa-cyan-rgb),.22))',
-      glow: isNow ? '0 0 7px rgba(var(--sa-cyan-rgb),.75)' : 'none',
+      glow: isNow ? '0 0 7px rgba(var(--sa-cyan-rgb),.75)' : 'none'
     }
   })
   return {
     bars,
     tlNow: buckets[buckets.length - 1] || 0,
     tlMax,
-    windowMin: notificationHistoryConfig.value?.buffer_timestamp_min || 20,
+    windowMin: notificationHistoryConfig.value?.buffer_timestamp_min || 20
   }
 })

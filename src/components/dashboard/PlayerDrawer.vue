@@ -16,11 +16,17 @@
  * Vue freezes the leaving DOM rather than re-rendering it against a null player.
  */
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
-import { selectedPlayer, selectedPlayerTasks, closePlayer } from './dashboardState.js'
+import {
+  selectedPlayer,
+  selectedPlayerTasks,
+  selectedPlayerActivity,
+  closePlayer
+} from './dashboardState.js'
 import { reduceMotionOn } from '@/settings.js'
 
 const player = selectedPlayer
 const tasks = selectedPlayerTasks
+const activity = selectedPlayerActivity
 const open = computed(() => player.value !== null)
 
 const drawerRef = ref(null)
@@ -37,7 +43,9 @@ const rankClass = computed(() => {
 // Slide from the right by default; a plain cross-fade when reduced motion is on
 // (the admin toggle from Enhancements item 7). The OS-level
 // prefers-reduced-motion is covered by the media query in <style> below.
-const drawerTransition = computed(() => (reduceMotionOn.value ? 'sa-drawer-fade' : 'sa-drawer-slide'))
+const drawerTransition = computed(() =>
+  reduceMotionOn.value ? 'sa-drawer-fade' : 'sa-drawer-slide'
+)
 
 /* Accessibility: trap focus while open, dismiss on Esc, return focus to the
    originating row on close. The keydown listener is attached at the document
@@ -48,7 +56,9 @@ function focusable() {
   const root = drawerRef.value
   if (!root) return []
   return Array.from(
-    root.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    root.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    )
   ).filter((el) => !el.disabled && el.offsetParent !== null)
 }
 
@@ -107,7 +117,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
       <div class="sa-drawer-top">
         <span class="sa-eyebrow sa-mono"><b>◧</b> PARTICIPANT · MONITOR</span>
         <span class="sa-drawer-spacer"></span>
-        <button ref="closeBtnRef" class="sa-drawer-x" aria-label="Close panel" @click="closePlayer">✕</button>
+        <button ref="closeBtnRef" class="sa-drawer-x" aria-label="Close panel" @click="closePlayer">
+          ✕
+        </button>
       </div>
 
       <div v-if="player" class="sa-drawer-body">
@@ -115,10 +127,14 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           <!-- header block: identity + rank + score + live status chips -->
           <div class="sa-dhead">
             <div class="sa-idrow">
-              <div class="sa-rankbadge sa-mono" :class="rankClass"><span class="sa-hash">#</span>{{ player.rank }}</div>
+              <div class="sa-rankbadge sa-mono" :class="rankClass">
+                <span class="sa-hash">#</span>{{ player.rank }}
+              </div>
               <div class="sa-idmeta">
                 <div class="sa-idname">
-                  <span v-if="player.complete" class="sa-idmedal" title="Cleared every task">🏅</span>
+                  <span v-if="player.complete" class="sa-idmedal" title="Cleared every task"
+                    >🏅</span
+                  >
                   <span class="sa-nm">{{ player.name }}</span>
                 </div>
                 <div class="sa-idorg sa-mono">{{ player.org }}</div>
@@ -133,7 +149,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
             </div>
             <div class="sa-chips">
               <span v-for="c in player.chips" :key="c.key" class="sa-chip" :style="c.style">
-                <span class="sa-chip-g">{{ c.glyph }}</span>{{ c.label }}
+                <span class="sa-chip-g">{{ c.glyph }}</span
+                >{{ c.label }}
               </span>
               <span v-if="!player.chips.length" class="sa-chip sa-chip-none">no badges yet</span>
             </div>
@@ -171,7 +188,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                   <div v-if="t.state === 'now'" class="sa-tmeta sa-mono">
                     <span class="sa-pulse"></span>
                     <template v-if="t.onNow"
-                      >current task<template v-if="t.sinceLabel"> · started {{ t.sinceLabel }} ago</template></template
+                      >current task<template v-if="t.sinceLabel">
+                        · started {{ t.sinceLabel }} ago</template
+                      ></template
                     >
                     <template v-else>current task · <span class="sa-fb">stalled</span></template>
                   </div>
@@ -185,7 +204,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                 <div class="sa-trt">
                   <template v-if="t.state === 'done'">
                     <div class="sa-tat sa-mono" :title="t.atTitle">{{ t.atLabel }}</div>
-                    <span class="sa-gap sa-mono" :class="t.gapClass" :title="t.gapTitle">{{ t.gapLabel }}</span>
+                    <span class="sa-gap sa-mono" :class="t.gapClass" :title="t.gapTitle">{{
+                      t.gapLabel
+                    }}</span>
                   </template>
                   <template v-else-if="t.state === 'now'">
                     <span
@@ -212,7 +233,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                     <div class="sa-tat sa-mono">—</div>
                     <span
                       class="sa-gap sa-gap-lock sa-mono"
-                      :title="t.reqPos ? `Locked — task ${t.reqPos} must be completed first` : 'Locked — prerequisite not met'"
+                      :title="
+                        t.reqPos
+                          ? `Locked — task ${t.reqPos} must be completed first`
+                          : 'Locked — prerequisite not met'
+                      "
                       >🔒</span
                     >
                   </template>
@@ -220,7 +245,36 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               </div>
             </div>
           </div>
-          <!-- Last-seen + activity (Phase 3) renders here. -->
+          <!-- last-seen + activity sparkline (Phase 3) -->
+          <div v-if="activity" class="sa-sec">
+            <div class="sa-sec-h">
+              <span class="sa-sec-ttl">LAST SEEN &amp; ACTIVITY</span>
+              <span class="sa-sec-sub sa-mono">{{ activity.axisSub }}</span>
+            </div>
+            <div class="sa-seen">
+              <span class="sa-seen-dot" :class="'sa-seen-' + activity.seenState"></span>
+              <span class="sa-seen-txt">
+                <template v-if="activity.seenState === 'on'">Active now</template>
+                <template v-else-if="activity.seenState === 'off'"
+                  >Last seen <b>{{ activity.seenAgo }}</b> ago</template
+                >
+                <template v-else>No activity recorded</template>
+              </span>
+            </div>
+            <template v-if="activity.bars.length">
+              <div class="sa-spark">
+                <i
+                  v-for="(b, i) in activity.bars"
+                  :key="i"
+                  :style="{ height: b.h + '%', background: b.bg }"
+                ></i>
+              </div>
+              <div class="sa-spark-ax sa-mono">
+                <span>{{ activity.axisLeft }}</span>
+                <span>now</span>
+              </div>
+            </template>
+          </div>
         </div>
 
         <!-- events rail shell — populated from the per-user backend history in Phase 4 -->
@@ -230,7 +284,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
             <span class="sa-erail-sub sa-mono">this participant</span>
           </div>
           <div class="sa-erail-list">
-            <div class="sa-erail-empty sa-mono">Recent request &amp; webhook events will appear here.</div>
+            <div class="sa-erail-empty sa-mono">
+              Recent request &amp; webhook events will appear here.
+            </div>
           </div>
         </div>
       </div>
@@ -260,7 +316,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   flex-direction: column;
   background: linear-gradient(180deg, rgba(16, 25, 42, 0.985), rgba(9, 14, 25, 0.985));
   border-left: 1px solid rgba(var(--sa-cyan-rgb), 0.28);
-  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.55), inset 1px 0 0 rgba(var(--sa-cyan-rgb), 0.06);
+  box-shadow:
+    -24px 0 60px rgba(0, 0, 0, 0.55),
+    inset 1px 0 0 rgba(var(--sa-cyan-rgb), 0.06);
 }
 
 /* top bar */
@@ -299,7 +357,10 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   line-height: 1;
   background: rgba(var(--sa-cyan-rgb), 0.06);
   border: 1px solid rgba(var(--sa-cyan-rgb), 0.18);
-  transition: color 0.18s, background 0.18s, border-color 0.18s;
+  transition:
+    color 0.18s,
+    background 0.18s,
+    border-color 0.18s;
 }
 .sa-drawer-x:hover {
   color: var(--sa-cyan);
@@ -649,9 +710,63 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sa-pulse {
+  .sa-pulse,
+  .sa-seen-on {
     animation: none;
   }
+}
+
+/* last-seen + activity sparkline (ported from the Variant B mockup) */
+.sa-seen {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 12px;
+}
+.sa-seen-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+.sa-seen-on {
+  background: var(--sa-mint);
+  box-shadow: 0 0 8px var(--sa-mint);
+  animation: sa-drawer-blink 1.3s infinite;
+}
+.sa-seen-off {
+  background: var(--sa-gold);
+  box-shadow: 0 0 8px rgba(var(--sa-gold-rgb), 0.6);
+}
+.sa-seen-cold {
+  background: var(--sa-text-6);
+}
+.sa-seen-txt {
+  font-size: 13px;
+  color: var(--sa-text-2);
+}
+.sa-seen-txt b {
+  color: var(--sa-text-1);
+  font-weight: 700;
+}
+.sa-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 46px;
+  padding: 6px 0 0;
+}
+.sa-spark i {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+}
+.sa-spark-ax {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-size: 9px;
+  color: var(--sa-text-6);
 }
 
 /* events rail */
