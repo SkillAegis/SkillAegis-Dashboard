@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | In progress — Phase 3 done (2026-07-05); Phase 4 next |
+| **Status** | Complete — all phases done (Phase 4, 2026-07-05) |
 | **Date** | 2026-07-03 |
 | **Scope** | SkillAegis-Dashboard frontend (`src/components/dashboard/*`, `src/socket.js`) **and** a backend addition for per-user event history (`backend/db.py`, `backend/notification.py`, `backend/server.py`) plus matching mock support (`backend/dev_mock_server.py`). |
 | **Non-goals** | No change to the evaluation engine, scoring math, or scenario format. The Socket.IO contract gains exactly **one** request/ack event (`get_user_events`); no new server-push event — live event updates ride the existing `notification` push. No change to any existing event. |
@@ -117,7 +117,7 @@ Resolving the prior "Open questions":
 | 1 | Drawer shell + header | Frontend | Medium | Med | ✅ Done (5c746d0) |
 | 2 | Per-task timing & gaps | Frontend | Medium | Low | ✅ Done (454b11f) |
 | 3 | Last-seen & activity sparkline | Frontend | Small | Low | ✅ Done (84fcba7) |
-| 4 | Recent events (backend per-user history + frontend) | Full-stack | Large | Med | ⬜ Not started |
+| 4 | Recent events (backend per-user history + frontend) | Full-stack | Large | Med | ✅ Done (e6867e0) |
 
 Phase 0 is a pre-build gate — no production code until the look is signed off. Phases 1–4 are each a
 working, demonstrable increment on the mock server; 1–3 are frontend-only, and phase 4 is the only
@@ -342,7 +342,47 @@ implementer's discretion.
 - New events for that player appear live; other players' events never leak in.
 - The mock serves per-user history; reset clears the per-user buffers.
 
-**Status: ⬜ Not started.**
+**Status: ✅ Done — e6867e0.** The one full-stack slice; contract gains exactly the
+`get_user_events` request/ack event, live updates ride the existing `notification` push.
+
+**Backend + mock.** `db.py`: `PER_USER_NOTIFICATION_BUFFER_SIZE = 50` +
+`USER_NOTIFICATION_MESSAGES` (`user_id → deque(maxlen=50)`, newest first),
+`addUserNotification` / `resetUserNotificationMessages`. `notification.py`:
+`record_notification` also records into the per-user ring (keyed by the
+notification's `user_id`); new `get_user_events(user_id)`; `reset_notifications`
+clears the per-user buffers too. `server.py`: `@sio.event get_user_events(sid, data)`
+→ `notification_model.get_user_events(int(data['user_id']))`, **ungated** (matches
+`get_notifications` — read-only for all viewers). `dev_mock_server.py`: per-user
+history store + `_record_user_notification` (mirrors `record_notification`), seeded
+deep (24–44 accepted events/user, past the 30-event global feed) **after** the
+reproducible board so the seed sequence is unchanged; live-recorded in the sim loop;
+matching `get_user_events` handler; `reset_notifications` clears it.
+
+**Frontend.** `socket.js`: `userEvents` reactive state + `loadUserEvents` /
+`clearUserEvents`; the `notification` handler append-lefts events whose `user_id`
+matches the open drawer's player (capped at 50). `dashboardState.js`:
+`openPlayer` / `closePlayer` seed / clear the rail; `selectedPlayerEvents` selector
+reuses the Live Feed row shaping (`methodStyle` / `payloadToLines` /
+`PAYLOAD_PREVIEW_LINES`) — method chip, url / `target_tool`, 2-line payload preview
+with a "▸ N more" fold. `PlayerDrawer.vue`: the Phase 1 events-rail shell now renders
+the shaped events newest-first with an empty state; row styles ported from the
+Variant B mockup.
+
+**Webhook chip decision (2026-07-05):** the PRD says "reuse the `feed` row shaping."
+The signed-off mockup tinted webhook rows gold; the live `feed` view-model tints them
+**violet** (`--sa-violet`). Chose violet for whole-app consistency with the Live Feed
+(the same data, same treatment); a trivial swap to gold if the mockup's palette is
+preferred. **No in-rail search box** — the mockup's Variant B showed a filter input,
+but the PRD's Phase 4 frontend bullet doesn't list one and the Phase 1 shell built
+none; left as a possible follow-up.
+
+Verified on the mock (headless Chrome / CDP + a direct Socket.IO client):
+`get_user_events` returns per-user history **deeper than 30** (42/42/32 for three
+users) with **no cross-user leak**, newest-first, `[]` for unknown users / empty
+payload, cleared by `reset_notifications`. The drawer renders the rail isolated per
+player (41 events for one, 29 for another), with WEBHOOK (violet) / GET / POST / PUT /
+DELETE chips + payload previews + the "N more" fold, and **live-appends** the open
+drawer 41 → 42 → 43 as `notification` pushes for that player arrive (no re-fetch).
 
 ---
 
