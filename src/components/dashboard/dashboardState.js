@@ -30,7 +30,10 @@ import {
   socketConnected,
   zmqLastTime,
   toggleVerboseMode,
-  toggleApiQueryMode
+  toggleApiQueryMode,
+  userEvents,
+  loadUserEvents,
+  clearUserEvents
 } from '@/socket'
 
 /* ------------------------------------------------------------------ */
@@ -473,9 +476,13 @@ export const taskLabels = computed(() => (selectedExercise.value?.tasks || []).m
 export const selectedPlayerId = ref(null)
 export function openPlayer(id) {
   selectedPlayerId.value = id
+  // Seed the events rail with this player's per-user history (Phase 4); the
+  // socket `notification` handler then live-appends new events for them.
+  loadUserEvents(id)
 }
 export function closePlayer() {
   selectedPlayerId.value = null
+  clearUserEvents()
 }
 
 // Live status chips for the drawer header, mapped from the same
@@ -739,6 +746,41 @@ export const selectedPlayerActivity = computed(() => {
     axisLeft: windowMin ? `−${windowMin} min` : '',
     axisSub: size ? `${size} buckets · ~${Math.round(bucketSec)}s each` : 'no activity data'
   }
+})
+
+// Recent events for the drill-down drawer's events rail (Phase 4). Shapes the
+// per-user event history held in socket.js (`userEvents` — seeded from the
+// backend `get_user_events` ring on open, live-appended for this player) using
+// the same row treatment as the Live Feed (`feed`): a method chip, url /
+// target_tool, and a 2-line payload preview with a "▸ N more" fold. Webhooks get
+// the violet chip + tint the Live Feed uses, and a single hook line. Newest
+// first (the buffer is already ordered). Returns null while the drawer is closed
+// so it stays off the compute path; each event carries the server clock time.
+export const selectedPlayerEvents = computed(() => {
+  if (selectedPlayerId.value === null) return null
+  return userEvents.value.map((e) => {
+    const isWebhook = e.notification_origin === 'webhook'
+    const method = isWebhook ? 'HOOK' : e.http_method
+    const [fg, bg] = methodStyle(e.http_method)
+    const hasPayload = isDisplayablePayload(e.payload)
+    const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
+    const preview = pl.lines.slice(0, PAYLOAD_PREVIEW_LINES)
+    const more = pl.lines.length - preview.length
+    return {
+      id: e.id,
+      isWebhook,
+      method,
+      methodLabel: isWebhook ? 'WEBHOOK' : method,
+      methodFg: isWebhook ? 'var(--sa-violet)' : fg,
+      methodBg: isWebhook ? 'rgba(var(--sa-violet-rgb),.16)' : bg,
+      url: isWebhook ? e.target_tool || 'webhook' : e.url,
+      time: e.time || '',
+      hasPayload,
+      payloadIsString: pl.isString,
+      payloadLines: preview,
+      moreCount: more > 0 ? more : 0
+    }
+  })
 })
 
 /* ------------------------------------------------------------------ */

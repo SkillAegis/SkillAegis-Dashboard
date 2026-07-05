@@ -20,6 +20,7 @@ import {
   selectedPlayer,
   selectedPlayerTasks,
   selectedPlayerActivity,
+  selectedPlayerEvents,
   closePlayer
 } from './dashboardState.js'
 import { reduceMotionOn } from '@/settings.js'
@@ -27,6 +28,7 @@ import { reduceMotionOn } from '@/settings.js'
 const player = selectedPlayer
 const tasks = selectedPlayerTasks
 const activity = selectedPlayerActivity
+const events = selectedPlayerEvents
 const open = computed(() => player.value !== null)
 
 const drawerRef = ref(null)
@@ -277,15 +279,46 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           </div>
         </div>
 
-        <!-- events rail shell — populated from the per-user backend history in Phase 4 -->
+        <!-- events rail — this participant's per-user history (Phase 4), newest
+             first, seeded from the backend and live-appended on the notification push -->
         <div class="sa-erail">
           <div class="sa-erail-head">
             <span class="sa-erail-ttl">RECENT EVENTS</span>
-            <span class="sa-erail-sub sa-mono">this participant</span>
+            <span class="sa-erail-sub sa-mono">{{
+              events && events.length ? events.length + ' shown · newest first' : 'this participant'
+            }}</span>
           </div>
           <div class="sa-erail-list">
-            <div class="sa-erail-empty sa-mono">
-              Recent request &amp; webhook events will appear here.
+            <template v-if="events && events.length">
+              <div v-for="e in events" :key="e.id" class="sa-ev" :class="{ 'sa-ev-web': e.isWebhook }">
+                <div class="sa-ev-top">
+                  <span
+                    class="sa-meth sa-mono"
+                    :style="{ color: e.methodFg, background: e.methodBg }"
+                    >{{ e.methodLabel }}</span
+                  >
+                  <span class="sa-ev-url sa-mono" :title="e.url">{{ e.url }}</span>
+                  <span class="sa-ev-time sa-mono">{{ e.time }}</span>
+                </div>
+                <div v-if="e.hasPayload" class="sa-ev-pay">
+                  <template v-if="e.isWebhook && e.payloadIsString">
+                    <span class="sa-ev-hook sa-mono">{{ e.payloadLines[0]?.v }}</span>
+                  </template>
+                  <template v-else>
+                    <div v-for="(ln, li) in e.payloadLines" :key="li" class="sa-ev-ln sa-mono">
+                      <template v-if="e.payloadIsString">{{ ln.v }}</template>
+                      <template v-else
+                        ><span class="sa-ev-k">{{ ln.k }}</span
+                        ><span class="sa-ev-c">: </span><span class="sa-ev-v">{{ ln.v }}</span></template
+                      >
+                    </div>
+                    <div v-if="e.moreCount" class="sa-ev-more sa-mono">▸ {{ e.moreCount }} more</div>
+                  </template>
+                </div>
+              </div>
+            </template>
+            <div v-else class="sa-erail-empty sa-mono">
+              No recent request &amp; webhook events for this participant.
             </div>
           </div>
         </div>
@@ -817,6 +850,83 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   text-align: center;
   padding: 24px 8px;
   line-height: 1.5;
+}
+
+/* event rows (ported from the Variant B mockup; webhook rows borrow the Live
+   Feed's violet treatment so the whole app tints webhooks the same) */
+.sa-ev {
+  border-radius: 10px;
+  padding: 8px 11px;
+  margin-bottom: 6px;
+  background: rgba(var(--sa-bg-rgb), 0.5);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.1);
+}
+.sa-ev-web {
+  border-color: rgba(var(--sa-violet-rgb), 0.28);
+  background: rgba(var(--sa-violet-rgb), 0.05);
+}
+.sa-ev-top {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.sa-meth {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 3px 7px;
+  border-radius: 5px;
+  min-width: 46px;
+  text-align: center;
+  flex: none;
+}
+.sa-ev-url {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--sa-text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sa-ev-time {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sa-text-5);
+  flex: none;
+}
+.sa-ev-pay {
+  margin-top: 7px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: rgba(var(--sa-bg-rgb), 0.6);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.1);
+}
+.sa-ev-ln {
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--sa-text-4);
+}
+.sa-ev-k {
+  color: var(--sa-text-5);
+}
+.sa-ev-c {
+  color: var(--sa-text-4);
+}
+.sa-ev-v {
+  color: #8fe3b6;
+}
+.sa-ev-more {
+  font-size: 10px;
+  color: var(--sa-cyan);
+  margin-top: 3px;
+}
+.sa-ev-hook {
+  font-size: 11px;
+  color: #d9c690;
 }
 
 /* transitions — slide (default) / fade (reduced motion) + backdrop fade */

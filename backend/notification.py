@@ -29,6 +29,11 @@ def get_notifications() -> list[dict]:
     return list(db.NOTIFICATION_MESSAGES)
 
 
+def get_user_events(user_id: int) -> list[dict]:
+    buffer = db.USER_NOTIFICATION_MESSAGES.get(user_id)
+    return list(buffer) if buffer is not None else []
+
+
 def get_notifications_history() -> dict:
     return {
         'history': list(db.NOTIFICATION_HISTORY),
@@ -55,10 +60,14 @@ def get_users_activity() -> dict:
 
 def reset_notifications():
     db.resetNotificationMessage()
+    db.resetUserNotificationMessages()
 
 
 def record_notification(notification: dict):
     db.NOTIFICATION_MESSAGES.appendleft(notification)
+    user_id = notification.get('user_id')
+    if user_id is not None:
+        db.addUserNotification(user_id, notification)
 
 
 def record_notification_history(message_count: int):

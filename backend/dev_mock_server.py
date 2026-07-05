@@ -61,6 +61,8 @@ TASK_NAMES = [
 ]
 ACTIVITY_BUFFER = 32          # heat bars per player
 HISTORY_BUFFER = 120          # 5s buckets in the feed timeline (~10 min shown)
+PER_USER_HISTORY = 50         # per-player event ring for the drill-down drawer
+                              # (deeper than the 30-event global feed)
 
 _DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
@@ -92,6 +94,7 @@ STATE = {
     "activity": {},           # activity[uid] = [int,...] length ACTIVITY_BUFFER
     "history": [0] * HISTORY_BUFFER,
     "notifications": [],       # newest first
+    "user_notifications": {},  # user_id -> [notif,...] newest first (drawer history)
     "notif_id": 0,
     "verbose": False,          # feed filter: show all traffic (toggle_verbose_mode)
     "apiquery": False,         # feed filter: API requests only (toggle_apiquery_mode)
@@ -148,6 +151,7 @@ def build_world(n_players):
                      for u in STATE["users"]}
     STATE["fire"] = {u["user_id"]: None for u in STATE["users"]}
     STATE["activity"] = {u["user_id"]: [0] * ACTIVITY_BUFFER for u in STATE["users"]}
+    STATE["user_notifications"] = {u["user_id"]: [] for u in STATE["users"]}
 
     # Seed a believable mid-session board: most players partway, a couple already
     # cleared (so the clear bar / Just Cleared / Finishers show on first paint).
@@ -178,6 +182,7 @@ def build_world(n_players):
         notif = _make_notification(random.choice(STATE["users"]))
         if _accept(notif):
             STATE["notifications"].insert(0, notif)
+            _record_user_notification(notif)
             seeded += 1
     STATE["history"] = [0] * HISTORY_BUFFER
     for i in range(len(STATE["history"]) - 24, len(STATE["history"])):
@@ -195,6 +200,20 @@ def build_world(n_players):
         count1 = n_tasks1 if idx < 2 else random.randint(0, n_tasks1)
         for ti in range(count1):
             STATE["done"][uid][ex1["uuid"]][ti] = now - random.uniform(30, 600)
+
+    # Seed a deeper per-user event history last (after the board above, so its
+    # reproducible seed sequence is unchanged) — so the drill-down drawer's
+    # events rail is populated the moment it opens, and clearly runs past the
+    # 30-event global feed. The sim loop then live-appends on top.
+    for u in STATE["users"]:
+        made, attempts = 0, 0
+        target = random.randint(24, 44)
+        while made < target and attempts < 150:
+            attempts += 1
+            notif = _make_notification(u)
+            if _accept(notif):
+                _record_user_notification(notif)
+                made += 1
 
 
 def _ignite(uid, last_completion):
@@ -427,6 +446,19 @@ def _accept(notif):
     return notif.get("notification_origin") == "webhook" or bool(notif.get("is_api_request"))
 
 
+def _record_user_notification(notif):
+    """Append an accepted notification to its author's per-user history ring —
+    mirrors backend/notification.py:record_notification, which records every
+    accepted notification into a deeper per-user buffer keyed by user_id. Feeds
+    the drill-down drawer's events rail (get_user_events)."""
+    uid = notif.get("user_id")
+    if uid is None:
+        return
+    buf = STATE["user_notifications"].setdefault(uid, [])
+    buf.insert(0, notif)
+    del buf[PER_USER_HISTORY:]
+
+
 # ----------------------------------------------------------------------------
 # Emit helpers
 # ----------------------------------------------------------------------------
@@ -500,6 +532,7 @@ async def simulate(tick):
                 continue
             STATE["notifications"].insert(0, notif)
             del STATE["notifications"][30:]
+            _record_user_notification(notif)
             await sio.emit("notification", notif)
             notif_this_tick += 1
 
@@ -551,6 +584,15 @@ async def get_users_stats(sid):
 @sio.event
 async def get_notifications(sid):
     return list(STATE["notifications"])
+
+
+@sio.event
+async def get_user_events(sid, data):
+    try:
+        uid = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return []
+    return list(STATE["user_notifications"].get(uid, []))
 
 
 @sio.event
@@ -637,6 +679,8 @@ async def reset_all(sid):
 @sio.event
 async def reset_notifications(sid):
     STATE["notifications"].clear()
+    for buf in STATE["user_notifications"].values():
+        buf.clear()
     return {"success": True}
 
 

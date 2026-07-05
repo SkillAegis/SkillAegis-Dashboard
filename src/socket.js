@@ -6,6 +6,9 @@ import debounce from 'lodash.debounce'
 // "undefined" means the URL will be computed from the `window.location` object
 const URL = !import.meta.env.DEV ? '' : 'http://localhost:4001'
 const MAX_LIVE_LOG = 30
+// Per-user drawer history is a deeper ring than the global feed (mirrors the
+// backend's PER_USER_NOTIFICATION_BUFFER_SIZE).
+const MAX_USER_EVENTS = 50
 
 const initial_state = {
   notificationEvents: [],
@@ -21,7 +24,12 @@ const initial_state = {
   userTaskCheckInProgress: {},
   userStats: {},
   diagnostic: {},
+  userEvents: [],
 }
+
+// Which participant `state.userEvents` currently holds, so the live `notification`
+// push only appends events for the open drawer's player (null when closed).
+let eventsUserId = null
 
 const state = reactive({ ...initial_state })
 const connectionState = reactive({
@@ -63,6 +71,7 @@ export const zmqLastTime = computed(() => connectionState.zmq_last_time)
 export const userAuthenticated = computed(() => connectionState.is_authenticated)
 export const userTaskCheckInProgress = computed(() => state.userTaskCheckInProgress)
 export const userStats = computed(() => state.userStats)
+export const userEvents = computed(() => state.userEvents)
 
 export function resetState() {
   Object.assign(state, initial_state)
@@ -104,6 +113,25 @@ export function resetAll() {
 
 export function resetLiveLogs() {
   sendResetLiveLogs()
+}
+
+// Player drill-down drawer: seed the events rail with this participant's recent
+// history (the backend `get_user_events` per-user ring, deeper than the global
+// feed), then the `notification` handler live-appends new events for this player.
+export function loadUserEvents(user_id) {
+  eventsUserId = user_id
+  state.userEvents = []
+  socket.emit('get_user_events', { user_id }, (events) => {
+    // Guard against a stale ack after the drawer moved to another player / closed.
+    if (eventsUserId === user_id) {
+      state.userEvents = Array.isArray(events) ? events : []
+    }
+  })
+}
+
+export function clearUserEvents() {
+  eventsUserId = null
+  state.userEvents = []
 }
 
 export function reloadFromDisk() {
@@ -360,6 +388,10 @@ socket.on('notification', (message) => {
     state.notificationAPICounter += 1
   }
   addLimited(state.notificationEvents, message, MAX_LIVE_LOG)
+  // Live-append to the open drawer's events rail, this player's events only.
+  if (eventsUserId !== null && message.user_id === eventsUserId) {
+    addLimited(state.userEvents, message, MAX_USER_EVENTS)
+  }
 })
 
 socket.on('new_user', (new_user) => {

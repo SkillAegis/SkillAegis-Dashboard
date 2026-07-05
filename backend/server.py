@@ -248,6 +248,12 @@ async def get_notifications(sid):
     return notification_model.get_notifications()
 
 @sio.event
+async def get_user_events(sid, data):
+    # Per-user event history for the drill-down drawer. Ungated, matching
+    # get_notifications above — the drawer is a read-only monitor for all viewers.
+    return notification_model.get_user_events(int(data['user_id']))
+
+@sio.event
 @require_auth
 async def mark_task_completed(sid, payload):
     exercise_model.mark_task_completed(int(payload['user_id']), payload['exercise_uuid'], payload['task_uuid'])
