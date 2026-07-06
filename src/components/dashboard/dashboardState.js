@@ -476,12 +476,14 @@ export const taskLabels = computed(() => (selectedExercise.value?.tasks || []).m
 export const selectedPlayerId = ref(null)
 export function openPlayer(id) {
   selectedPlayerId.value = id
+  eventSearch.value = ''
   // Seed the events rail with this player's per-user history (Phase 4); the
   // socket `notification` handler then live-appends new events for them.
   loadUserEvents(id)
 }
 export function closePlayer() {
   selectedPlayerId.value = null
+  eventSearch.value = ''
   clearUserEvents()
 }
 
@@ -756,9 +758,31 @@ export const selectedPlayerActivity = computed(() => {
 // the violet chip + tint the Live Feed uses, and a single hook line. Newest
 // first (the buffer is already ordered). Returns null while the drawer is closed
 // so it stays off the compute path; each event carries the server clock time.
+// Free-text filter for the events rail (Phase 4 follow-up). Matched against the
+// method, url / target_tool, and payload text — mirrors the Live Feed's `feed`
+// filter (searchUrl) so the same query behaves the same in both places. Reset
+// per player in openPlayer/closePlayer so it never carries across drawers.
+export const eventSearch = ref('')
+
+function eventMatches(e, q) {
+  // Webhooks show as WEBHOOK/HOOK but still carry an http_method; make all of
+  // "webhook", "hook" and the underlying verb ("post"…) matchable.
+  const method = (e.notification_origin === 'webhook' ? 'webhook hook ' : '') + (e.http_method || '')
+  if (method.toLowerCase().includes(q)) return true
+  if ((e.url || '').toLowerCase().includes(q)) return true
+  if ((e.target_tool || '').toLowerCase().includes(q)) return true
+  const p = e.payload
+  if (p && typeof p === 'object')
+    return Object.entries(p).some(([k, v]) => `${k}${v}`.toLowerCase().includes(q))
+  if (typeof p === 'string') return p.toLowerCase().includes(q)
+  return false
+}
+
 export const selectedPlayerEvents = computed(() => {
   if (selectedPlayerId.value === null) return null
-  return userEvents.value.map((e) => {
+  const q = eventSearch.value.trim().toLowerCase()
+  const src = q ? userEvents.value.filter((e) => eventMatches(e, q)) : userEvents.value
+  return src.map((e) => {
     const isWebhook = e.notification_origin === 'webhook'
     const method = isWebhook ? 'HOOK' : e.http_method
     const [fg, bg] = methodStyle(e.http_method)
@@ -782,6 +806,13 @@ export const selectedPlayerEvents = computed(() => {
     }
   })
 })
+
+// Unfiltered event count for the rail — drives the "N of M" header when a filter
+// is active and tells an empty buffer apart from a filter with no matches. 0
+// while the drawer is closed.
+export const selectedPlayerEventsTotal = computed(() =>
+  selectedPlayerId.value === null ? 0 : userEvents.value.length
+)
 
 /* ------------------------------------------------------------------ */
 /* Per-task completion — the class-wide "which task is the wall?"      */

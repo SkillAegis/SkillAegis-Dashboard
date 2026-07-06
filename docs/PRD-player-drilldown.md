@@ -372,9 +372,18 @@ Variant B mockup.
 The signed-off mockup tinted webhook rows gold; the live `feed` view-model tints them
 **violet** (`--sa-violet`). Chose violet for whole-app consistency with the Live Feed
 (the same data, same treatment); a trivial swap to gold if the mockup's palette is
-preferred. **No in-rail search box** — the mockup's Variant B showed a filter input,
-but the PRD's Phase 4 frontend bullet doesn't list one and the Phase 1 shell built
-none; left as a possible follow-up.
+preferred. ~~**No in-rail search box**~~ — the mockup's Variant B showed a filter input,
+but the PRD's Phase 4 frontend bullet doesn't list one and the Phase 1 shell built none.
+
+**Follow-up — in-rail search box (done, post-merge, branch `feat/drawer-events-search`).**
+The deferred Variant-B filter is now built: an `eventSearch` ref in `dashboardState.js` filters
+`selectedPlayerEvents` (matched against method incl. WEBHOOK/HOOK, url / `target_tool`, and payload
+text — mirroring the Live Feed's `feed` filter) before the row shaping; a `selectedPlayerEventsTotal`
+computed backs the header's "N of M" count. `PlayerDrawer.vue` renders the `⌕` filter input from the
+mockup between the rail header and list (only when the buffer is non-empty), with a distinct "No
+events match …" empty state and the query reset per player in `openPlayer`/`closePlayer`. Verified on
+the mock (headless Chrome/CDP): 43 → 20 on a URL term, → 8 on `POST`, → 0 with the no-match message,
+back to 43 on clear, and the query clears when switching players.
 
 Verified on the mock (headless Chrome / CDP + a direct Socket.IO client):
 `get_user_events` returns per-user history **deeper than 30** (42/42/32 for three

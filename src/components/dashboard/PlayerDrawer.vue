@@ -21,6 +21,8 @@ import {
   selectedPlayerTasks,
   selectedPlayerActivity,
   selectedPlayerEvents,
+  selectedPlayerEventsTotal,
+  eventSearch,
   closePlayer
 } from './dashboardState.js'
 import { reduceMotionOn } from '@/settings.js'
@@ -29,7 +31,19 @@ const player = selectedPlayer
 const tasks = selectedPlayerTasks
 const activity = selectedPlayerActivity
 const events = selectedPlayerEvents
+const eventsTotal = selectedPlayerEventsTotal
+const search = eventSearch
 const open = computed(() => player.value !== null)
+
+// Events-rail filter state: whether a query is active, and the header sub-line
+// (shows "N of M" while filtering so it's clear the buffer is deeper than shown).
+const filtering = computed(() => search.value.trim().length > 0)
+const railSub = computed(() => {
+  const total = eventsTotal.value
+  if (!total) return 'this participant'
+  const shown = events.value ? events.value.length : 0
+  return filtering.value ? `${shown} of ${total} · newest first` : `${shown} shown · newest first`
+})
 
 const drawerRef = ref(null)
 const closeBtnRef = ref(null)
@@ -284,9 +298,17 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
         <div class="sa-erail">
           <div class="sa-erail-head">
             <span class="sa-erail-ttl">RECENT EVENTS</span>
-            <span class="sa-erail-sub sa-mono">{{
-              events && events.length ? events.length + ' shown · newest first' : 'this participant'
-            }}</span>
+            <span class="sa-erail-sub sa-mono">{{ railSub }}</span>
+          </div>
+          <div v-if="eventsTotal" class="sa-erail-search">
+            <span aria-hidden="true">⌕</span>
+            <input
+              v-model="search"
+              type="search"
+              class="sa-erail-input sa-mono"
+              placeholder="Filter URL, method or payload…"
+              aria-label="Filter events"
+            />
           </div>
           <div class="sa-erail-list">
             <template v-if="events && events.length">
@@ -318,7 +340,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               </div>
             </template>
             <div v-else class="sa-erail-empty sa-mono">
-              No recent request &amp; webhook events for this participant.
+              <template v-if="filtering">No events match “{{ search.trim() }}”.</template>
+              <template v-else>No recent request &amp; webhook events for this participant.</template>
             </div>
           </div>
         </div>
@@ -830,6 +853,40 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   font-size: 10px;
   color: var(--sa-text-6);
   margin-left: auto;
+}
+/* in-rail filter (ported from the Variant B mockup; input treatment matches the
+   Live Feed's .sa-input so the two search boxes read the same) */
+.sa-erail-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 14px 4px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  background: rgba(var(--sa-bg-rgb), 0.7);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.16);
+}
+.sa-erail-search span {
+  color: var(--sa-text-6);
+  font-size: 12px;
+}
+.sa-erail-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--sa-text-2);
+  font-size: 11px;
+}
+.sa-erail-input::placeholder {
+  color: #3c536f;
+}
+/* strip the WebKit clear/search decorations so it reads as a plain field */
+.sa-erail-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 .sa-erail-list {
   flex: 1;
