@@ -104,8 +104,8 @@ Resolving the prior "Open questions":
   scrolling **main column** (header + status chips, per-task timing, last-seen + activity sparkline)
   beside a **full-height, independently-scrollable events rail** on the right, so a trainer can browse
   a participant's recent request/webhook history without disturbing the profile next to it. Mockup:
-  `docs/mockups/player-drilldown.html` (self-contained; embeds the app's Space Grotesk / JetBrains
-  Mono faces and the `.sa-root` tokens).
+  a self-contained `player-drilldown.html` (embedded the app's Space Grotesk / JetBrains
+  Mono faces and the `.sa-root` tokens; removed post-ship).
 
 ## Implementation phases
 
@@ -144,7 +144,7 @@ changes.
 **Acceptance.** You have signed off on the drawer's look and section layout.
 
 **Status: ✅ Done — d4d7074.** Signed off 2026-07-03 on **Variant B** (two-column: profile column +
-full-height events rail). Mockup at `docs/mockups/player-drilldown.html`. Timing/gap chips carry
+full-height events rail). Mockup was a self-contained `player-drilldown.html` (removed post-ship). Timing/gap chips carry
 explanatory tooltips.
 
 ---

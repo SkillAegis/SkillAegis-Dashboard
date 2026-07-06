@@ -44,4 +44,4 @@ server, but with synthetic, animated data so the board is alive the moment you l
   ZMQ time — drives the Live Feed freshness light amber "NO LIVE DATA"; stopping the mock
   drops the socket → red "OFFLINE"). `GET /` reports the paused flag and lists the controls.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
-  real backend (`--zmq_log_file` replays a recorded session). See `docs/PRD-ui-testing.md`.
+  real backend (`--zmq_log_file` replays a recorded session). See `docs/archive/PRD-ui-testing.md`.

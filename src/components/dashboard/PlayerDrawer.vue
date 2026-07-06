@@ -2,7 +2,7 @@
 /**
  * Player drill-down drawer — a right-edge slide-over that profiles one
  * participant for the selected exercise (Variant B, signed off in Phase 0:
- * docs/PRD-player-drilldown.md, docs/mockups/player-drilldown.html).
+ * docs/archive/PRD-player-drilldown.md).
  *
  * Phase 1 builds the interaction surface, the dimming backdrop, and the header
  * (identity + rank + score + live status chips), plus the two-column body: a

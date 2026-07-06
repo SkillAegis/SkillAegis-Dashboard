@@ -105,7 +105,7 @@ world), `zmq-stale` / `zmq-fresh` (freeze / resume the reported ZMQ time — dri
 freshness light amber "NO LIVE DATA"; stopping the mock drops the socket → red "OFFLINE").
 
 This is a UI harness only — it does not run the evaluation engine. See
-[`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
+[`docs/archive/PRD-ui-testing.md`](./docs/archive/PRD-ui-testing.md).
 
 
 # License
