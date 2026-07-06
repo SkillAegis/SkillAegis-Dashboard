@@ -95,7 +95,21 @@ zsocket.setsockopt_string(zmq.SUBSCRIBE, '')
 # Initialize Socket.IO server
 app = web.Application()
 secret_key = base64.urlsafe_b64decode(base64.urlsafe_b64encode(os.urandom(32)))
-setup_session(app, EncryptedCookieStorage(secret_key))
+# Session cookie hardening.
+# - `secure` is opt-in via config: SkillAegis is commonly served over plain HTTP
+#   on a trusted LAN (see start.sh), where a Secure cookie set over http:// on a
+#   non-localhost host is silently dropped by the browser, making login appear to
+#   fail. Enable `session_cookie_secure` only when serving over HTTPS (directly or
+#   behind a TLS-terminating proxy).
+# - SameSite=Strict keeps the session cookie from riding cross-site requests
+#   (CSRF / cross-site WebSocket hijacking of admin actions). The dev flow
+#   (Vite :5173 -> backend :4001) is same-site, so it keeps working.
+setup_session(app, EncryptedCookieStorage(
+    secret_key,
+    secure=getattr(config, "session_cookie_secure", False),
+    httponly=True,
+    samesite=getattr(config, "session_cookie_samesite", "Strict"),
+))
 sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
 sio.attach(app)
 
