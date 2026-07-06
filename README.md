@@ -3,7 +3,7 @@
 
 **SkillAegis-Dashboard** is a platform to run a training session and visualize the progress of participants in real-time.
 
-The Dashboard allows you to deploy and run scenarios under the [Common Exercise Format (CEXF)](https://misp.github.io/cexf/) that can are designed by other application such as **[SkillAegis Editor](https://github.com/MISP/SkillAegis-Editor)**.
+The Dashboard runs scenarios authored in the [Common Exercise Format (CEXF)](https://misp.github.io/cexf/) with tools such as the **[SkillAegis Editor](https://github.com/MISP/SkillAegis-Editor)**.
 
 > [!NOTE]  
 > Consider running this application with **[SkillAegis](https://github.com/MISP/SkillAegis)** for Production.
@@ -16,6 +16,16 @@ The Dashboard allows you to deploy and run scenarios under the [Common Exercise 
 
 ![SkillAegis Dashboard Fullscreen](./docs/SkillAegis-Dashboard_fullscreen.png)
 *The fullscreen view provides an overview of the status of all users in a single, easily accessible display.*
+
+
+## Features
+
+- **Real-time leaderboard** — ranks every participant live with per-task progress and scores, a task-completion chart that flags the hardest task, and automatic pagination for large groups.
+- **Live activity feed** — a streaming log of participant activity (MISP events, webhooks and tool calls) with verbose / API-only filters and per-user or per-target search.
+- **Player drill-down** — click any participant for a detailed view of their task-by-task progress, activity timeline and searchable event history.
+- **Gamification** — scoring, trophies, "on fire" scoring streaks, a Hall of Fame podium, rotating champions and celebratory all-clear bursts keep sessions engaging.
+- **Presentation & operations** — a fullscreen big-screen overview, a live-connection health indicator (LIVE / NO LIVE DATA / OFFLINE), an authenticated admin panel and a reduce-motion accessibility toggle.
+- **CEXF-native** — runs any scenario in the [Common Exercise Format](https://misp.github.io/cexf/), designed with the [SkillAegis Editor](https://github.com/MISP/SkillAegis-Editor).
 
 
 ## Installation
