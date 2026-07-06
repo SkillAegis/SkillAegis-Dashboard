@@ -20,26 +20,25 @@ The Dashboard allows you to deploy and run scenarios under the [Common Exercise 
 
 ## Installation
 
-To get started with SkillAegis-Editor, follow these steps:
+To get started with SkillAegis-Dashboard, follow these steps:
 
 0. Ensure Python **3.10** or higher is installed.
     ```bash
     python -V
     ```
-1. Install dependencies
+1. Set up the backend virtual environment and install its dependencies.
    ```bash
-   pushd backend
+   cd backend
    python3 -m venv venv
    source venv/bin/activate
    pip3 install -r requirements.txt
    ```
-2. Clone the configuration file
+2. Create the configuration file and adapt it to your needs.
     ```bash
     cp config.py.sample config.py
+    cd ..
     ```
-    - [optional] Update the configuration
-3. Start the application
-   popd
+3. Start the application — it serves the dashboard on <http://localhost:4001>.
    ```bash
    # Usage: ./start.sh --exercise_folder <folder> [--host <host>] [--port <port>]
    ./start.sh --exercise_folder scenarios/
@@ -48,35 +47,27 @@ To get started with SkillAegis-Editor, follow these steps:
 ## Development
 
 ### Back-end
+
+The backend is an **aiohttp + Socket.IO** server (`backend/`) that subscribes to MISP over
+ZeroMQ. Run it the same way as in production, pointing it at a scenarios folder:
+
 ```bash
-source venv/bin/activate
-fastapi dev main.py
+./start.sh --exercise_folder scenarios/
 ```
 
-### Front-end
+To replay a recorded ZeroMQ session instead of subscribing to a live MISP feed:
 
-#### Project Setup
-
-```sh
-npm install
+```bash
+python3 backend/main.py --exercise_folder scenarios/ --zmq_log_file <file>
 ```
 
-#### Compile and Hot-Reload for Development
+### Front-end (Vite, port 5173)
 
 ```sh
-npm run dev
-```
-
-#### Compile and Minify for Production
-
-```sh
-npm run build
-```
-
-#### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
+npm install          # install dependencies
+npm run dev          # hot-reload dev server (connects to the backend on :4001)
+npm run build        # production build to dist/
+npm run lint         # lint with ESLint (--fix)
 ```
 
 ### Testing the dashboard (mock server)
@@ -106,58 +97,6 @@ freshness light amber "NO LIVE DATA"; stopping the mock drops the socket → red
 This is a UI harness only — it does not run the evaluation engine. See
 [`docs/PRD-ui-testing.md`](./docs/PRD-ui-testing.md).
 
-
-## Installation
-```bash
-# Setup venv
-python3 -m venv venv
-source venv/bin/activate
-
-# Install deps
-pip3 install -r REQUIREMENTS
-
-# Create config file and adapt it to your needs
-cp config.py.sample config.py
-```
-
-## Running the PROD setup
-```bash
-python3 server.py
-# Access the page http://localhost:4000 with your browser
-```
-
-
-## Running the DEV setup
-```bash
-python3 server.py
-```
-```bash
-npm run dev
-# Access the page provided by the output of the above command
-```
-## Project Setup
-
-```sh
-npm install
-```
-
-### Compile and Hot-Reload for Development
-
-```sh
-npm run dev
-```
-
-### Compile and Minify for Production
-
-```sh
-npm run build
-```
-
-### Lint with [ESLint](https://eslint.org/)
-
-```sh
-npm run lint
-```
 
 # License
 This software is licensed under GNU Affero General Public License version 3
