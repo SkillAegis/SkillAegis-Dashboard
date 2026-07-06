@@ -14,8 +14,8 @@ The Dashboard runs scenarios authored in the [Common Exercise Format (CEXF)](htt
 ![SkillAegis Dashboard Active Exercises](./docs/SkillAegis-Dashboard_main.png)
 *On the dashboard main page, you can monitor the progress of all participants for the selected exercise and view real-time logs of their activity feed.*
 
-![SkillAegis Dashboard Fullscreen](./docs/SkillAegis-Dashboard_fullscreen.png)
-*The fullscreen view provides an overview of the status of all users in a single, easily accessible display.*
+![SkillAegis Dashboard Player Drill-Down](./docs/SkillAegis-Dashboard_player-drilldown.png)
+*Click any participant to open their drill-down: task-by-task timing, badges and scoring streaks, and a searchable history of their events, webhooks and tool calls.*
 
 
 ## Features
