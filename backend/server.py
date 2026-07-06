@@ -110,7 +110,17 @@ setup_session(app, EncryptedCookieStorage(
     httponly=True,
     samesite=getattr(config, "session_cookie_samesite", "Strict"),
 ))
-sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
+# Socket.IO CORS. Default '*' preserves the existing behaviour: it is needed for
+# the dev flow (Vite :5173 talking to the backend :4001) and is harmless for
+# same-origin production, where the backend also serves the built dashboard. With
+# SameSite=Strict on the session cookie, a cross-origin page cannot ride an
+# admin's session regardless of this value; pin `allowed_origins` in config (a
+# list of origins) as defense-in-depth if SkillAegis is ever exposed beyond a
+# trusted network.
+sio = socketio.AsyncServer(
+    cors_allowed_origins=getattr(config, "allowed_origins", None) or '*',
+    async_mode='aiohttp',
+)
 sio.attach(app)
 
 

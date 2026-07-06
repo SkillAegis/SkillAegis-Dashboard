@@ -21,3 +21,9 @@ session_cookie_secure = False
 # SameSite policy for the session cookie: 'Strict' (recommended), 'Lax' or 'None'.
 # 'None' requires session_cookie_secure = True.
 session_cookie_samesite = 'Strict'
+
+# --- Socket.IO CORS ---
+# Browser origins allowed to open a Socket.IO connection. None (default) allows
+# any origin ('*'), which the dev flow relies on. Pin to an explicit list, e.g.
+# ['https://skillaegis.example.org'], if the dashboard is ever exposed publicly.
+allowed_origins = None
