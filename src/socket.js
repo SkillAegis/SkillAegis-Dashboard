@@ -94,6 +94,10 @@ export async function login(payload) {
   return doLogin(payload)
 }
 
+export async function logout() {
+  return doLogout()
+}
+
 export function setCompletedState(completed, user_id, exec_uuid, task_uuid) {
   const payload = {
     user_id: user_id,
@@ -278,6 +282,30 @@ async function doLogin(payload) {
   } catch (error) {
     connectionState.is_authenticated = false
     return { success: false, message: 'Network error. Please try again.' }
+  }
+}
+
+async function doLogout() {
+  try {
+    const response = await fetch(`${URL}/logout`, {
+      method: 'POST',
+      credentials: import.meta.env.DEV ? "include" : "same-origin"
+    })
+
+    // Drop client auth state regardless, then reconnect so the socket's
+    // handshake session no longer carries the (now invalidated) auth — mirrors
+    // doLogin's rebind.
+    connectionState.is_authenticated = false
+    socket.disconnect()
+    socket.connect()
+
+    if (!response.ok) {
+      return { success: false, message: `Logout failed: ${response.status}` }
+    }
+    return { success: true, message: 'Successfully logged out' }
+  } catch (error) {
+    connectionState.is_authenticated = false
+    return { success: false, message: 'Network error during logout.' }
   }
 }
 

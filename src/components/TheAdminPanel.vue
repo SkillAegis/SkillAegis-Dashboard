@@ -5,17 +5,29 @@ import {
   faGraduationCap,
   faScrewdriverWrench,
   faSuitcaseMedical,
+  faRightFromBracket,
 } from '@fortawesome/free-solid-svg-icons'
 
 import Exercises from '@/components/adminPanel/Exercises.vue'
 import ToolsDiagnostic from '@/components/adminPanel/ToolsDiagnostic.vue'
 import ControlButtons from '@/components/adminPanel/ControlButtons.vue'
-import { checkUserAuthenticated, userAuthenticated } from '@/socket'
+import { checkUserAuthenticated, userAuthenticated, logout } from '@/socket'
 import LoginForm from '@/components/adminPanel/LoginForm.vue'
 import { adminPanelOpen } from '@/settings.js'
+import { toast } from '@/utils'
 
 let authChecher = null
 const activeTab = ref('control-panel')
+
+async function handleLogout() {
+  const result = await logout()
+  checkUserAuthenticated()
+  toast({
+    variant: result.success ? 'success' : 'danger',
+    message: result.message,
+    title: 'Logout'
+  })
+}
 
 onMounted(() => {
   checkUserAuthenticated()
@@ -72,6 +84,13 @@ onUnmounted(() => {
                 >
                   <FontAwesomeIcon :icon="faSuitcaseMedical" fixed-size class="mr-2"></FontAwesomeIcon>
                   <span>Diagnostic</span>
+                </button>
+                <button
+                  @click="handleLogout"
+                  class="text-start btn btn-lg !px-5 !py-3 mt-auto !bg-red-100 !text-red-800 !border-red-300 hover:!bg-red-200"
+                >
+                  <FontAwesomeIcon :icon="faRightFromBracket" fixed-size class="mr-2"></FontAwesomeIcon>
+                  <span>Log out</span>
                 </button>
             </div>
             <div class="p-4 grow">

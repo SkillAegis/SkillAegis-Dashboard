@@ -230,7 +230,7 @@ async def login(request):
 async def logout(request):
     session = await get_session(request)
     session.invalidate()
-    raise web.HTTPFound("/login")
+    return web.json_response({"success": True})
 
 
 @sio.event
@@ -717,4 +717,5 @@ app.router.add_get('/', index)
 app.router.add_get('/favicon.ico', favicon)
 app.router.add_post('/webhook', webhook)
 app.router.add_post('/login', login)
+app.router.add_post('/logout', logout)
 app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)
