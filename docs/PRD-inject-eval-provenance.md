@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phases 0–3 ✅ (Phase 3: Live Feed completion pip wired to `notification_outcome` + verified on the mock) — building phases 4–6 |
+| **Status** | Phases 0–4 ✅ (Phase 4: drawer completed-task "cleared by" provenance + View evaluation opening EvaluationDebug, verified on the mock) — building phases 5–6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -223,7 +223,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 | 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ✅ Done (7d67420) |
 | 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ✅ Done (a42ec9b) |
 | 3 | Live Feed completion pip | Frontend | Small | Low | ✅ Done (e8515f5) |
-| 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ☐ |
+| 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ✅ Done (cfc340b) |
 | 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ☐ |
 | 6 | Real backend capture (MISP + webhook) | Backend | Large | Med | ☐ |
 
@@ -383,12 +383,53 @@ task name; everything else stays unmarked; first-blood is distinguishable.
 
 ### Phase 4 — Drawer: completed-task provenance
 
+**Status: ✅ Done — cfc340b.** Each completed task in the drawer's TASK TIMING list shows a
+"cleared by `<method> <url>` @ `<time>`" line + a **View evaluation** control that opens the passing
+trace in `EvaluationDebug` (full from buffer A, else the compact recorded outcome); a completion with
+no retained provenance reads "cleared by — (provenance not retained)". Verified E2E on the mock
+(headless Chrome/CDP).
+
 Read `tasks_completion[uuid].provenance`; render "cleared by `<method> <url>` @ `<time>`" on each
 done task row and a **View evaluation** control opening `EvaluationDebug` for the passing attempt
 (from buffer A when present; else the compact provenance).
 
 **Acceptance.** Each completed task shows its triggering action; View evaluation opens the passing
 trace; still shows the "cleared by" line when the attempt has rolled out of buffer A.
+
+**As built.**
+- **`socket.js`** — reactive `userEvaluations` (buffer A) with `loadUserEvaluations` /
+  `clearUserEvaluations` seeded from the `get_user_evaluations` ack on drawer open, plus a
+  `user_evaluation_recorded` listener that live-prepends new attempts **for the open drawer's player
+  only** (capped at `MAX_USER_EVALUATIONS = 20`, mirroring the backend's `ATTEMPT_BUFFER_SIZE`). This
+  plumbing is shared with Phase 5's `userEvents`↔`userEvaluations` join.
+- **`dashboardState.js`** — done-task rows in `selectedPlayerTasks` carry
+  `clearedBy {method, url, atTime, isHook}` read from the completion's durable `provenance.trigger`
+  (null → the "(provenance not retained)" note, no View control). A shared `activeEvaluation` overlay
+  ref + `openEvaluation` / `closeEvaluation`, and `openTaskEvaluation(taskUuid)` which resolves the
+  rich captured attempt from buffer A by `provenance.attempt_id` (the full `{outcome, debug}` trace)
+  or, once it has rolled out of the ring, **degrades** to a minimal passing check rebuilt from the
+  compact `provenance.passing` (recorded outcome + strategies, empty debug). `openPlayer` /
+  `closePlayer` load/clear buffer A and close any open overlay.
+- **`PlayerDrawer.vue`** — renders the `.sa-prov` "cleared by" line (mint method chip; webhook clears
+  get the app-wide **violet** `HOOK` chip, matching the event rail + Debug banner) with a
+  `View evaluation` button, or the italic "(provenance not retained)" note; mounts the
+  `EvaluationDebug` overlay from `activeEvaluation`. The drawer's Esc/focus handler **defers to the
+  overlay while it's open** (capture-phase no-op) so one Esc closes only the overlay, a second closes
+  the drawer.
+- **`EvaluationDebug.vue`** — new optional `traceRetained` prop (default `true`, preserving the
+  Phase 2/3 contract); when `false` the Debug section notes "full step trace no longer retained —
+  showing the recorded outcome" instead of an empty timeline.
+- **dist/ rebuilt** — `PlayerDrawer` (and now `EvaluationDebug`, which it imports) ship in the prod
+  bundle, so `dist/` was rebuilt + committed with the source.
+- **Verified E2E** on the frozen `--no-sim --seed 1` mock (headless Chrome/CDP): a user's completed
+  tasks each render a cleared-by line + View, and the deterministic drop-rate completions render the
+  "(provenance not retained)" note (`with_line + blank == done`); View opens the full trace (Outcome
+  Successful, numbered step group, trigger method matches the row); forcing buffer-A eviction (26
+  `eval-fail`) leaves the durable cleared-by line intact while View **degrades** to the recorded
+  outcome + note; and Esc closes only the overlay, leaving the drawer open. **Verify caveat:**
+  `/mock/reset` does **not** reseed the RNG (`random.seed` runs once at startup), so the
+  provenance-drop pattern differs on each reset — the verify picks its target user from the *current*
+  world and asserts invariants, not fixed counts.
 
 ---
 
