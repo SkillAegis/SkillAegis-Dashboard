@@ -1421,6 +1421,19 @@ export const feed = computed(() => {
     const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
     const expandable =
       pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
+    // Completion pip (surface 1): `notification_outcome` merges the cleared
+    // task(s) onto the row in socket.js. Completed-only — evaluated-but-cleared-
+    // nothing and un-evaluated rows carry no `completed_tasks`, so no pip. A
+    // burst that clears several tasks in one action shows the first + "+N".
+    const clearedTasks = Array.isArray(e.completed_tasks) ? e.completed_tasks : []
+    const cleared = clearedTasks.length
+      ? {
+          label:
+            clearedTasks[0].name +
+            (clearedTasks.length > 1 ? ` +${clearedTasks.length - 1}` : ''),
+          title: 'Cleared: ' + clearedTasks.map((t) => t.name).join(', ')
+        }
+      : null
     return {
       id: e.id,
       user: name,
@@ -1434,7 +1447,8 @@ export const feed = computed(() => {
       keyCount: pl.keyCount,
       payloadLines: pl.lines,
       payloadIsString: pl.isString,
-      expandable
+      expandable,
+      cleared
     }
   })
 })

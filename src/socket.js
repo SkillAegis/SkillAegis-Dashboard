@@ -461,6 +461,18 @@ socket.on('user_task_check_in_progress', ({ user_id, inject_uuid }) => {
   }, 3000);
 })
 
+// Emitted after an evaluation that cleared a task, carrying the id of the feed
+// row that triggered it (the feed is completed-only — nothing is pushed for
+// actions that cleared nothing). Merge the cleared tasks onto the already-
+// rendered feed row so LiveFeed can light its completion pip; best-effort, so a
+// row that has scrolled out of the ring simply goes unmarked.
+socket.on('notification_outcome', ({ notification_id, completed_tasks }) => {
+  const row = state.notificationEvents.find((n) => n.id === notification_id)
+  if (row) {
+    row.completed_tasks = Array.isArray(completed_tasks) ? completed_tasks : []
+  }
+})
+
 function addLimited(target, message, maxCount) {
   target.unshift(message)
   if (target.length > maxCount) {
