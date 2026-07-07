@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phases 0–2 ✅ (mockup signed off 2026-07-07; contract frozen in the mock; `EvaluationDebug.vue` built + verified on the mock) — building phases 3–6 |
+| **Status** | Phases 0–3 ✅ (Phase 3: Live Feed completion pip wired to `notification_outcome` + verified on the mock) — building phases 4–6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -222,7 +222,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 | 0 | Design proposal & validation (mockup) | Design | Small | — | ✅ Done (05f7887) |
 | 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ✅ Done (7d67420) |
 | 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ✅ Done (a42ec9b) |
-| 3 | Live Feed completion pip | Frontend | Small | Low | ☐ |
+| 3 | Live Feed completion pip | Frontend | Small | Low | ✅ Done (e8515f5) |
 | 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ☐ |
 | 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ☐ |
 | 6 | Real backend capture (MISP + webhook) | Backend | Large | Med | ☐ |
@@ -343,11 +343,41 @@ traces show the sandbox detail; long data dumps are bounded and scroll.
 
 ### Phase 3 — Live Feed completion pip
 
+**Status: ✅ Done — e8515f5.** `notification_outcome` is consumed and merged onto the feed row by
+`notification_id`; the row shows a mint `✓ Cleared: <task>` pip. Completed-only. Verified E2E on the
+mock (headless Chrome/CDP): a completing action lights exactly one pip on its own row (label, task
+name, tooltip, mint check circle correct); a burst renders `<task> +N` with the full list in the
+tooltip; a failing "checked nothing" action adds a row with no pip.
+
 Consume `notification_outcome`; merge onto the feed row by `notification_id`; show a small ✓ +
 cleared-task name (completed-only). No pip for un-evaluated / failed actions.
 
 **Acceptance.** On the mock, clearing a task lights the pip on the correct feed row with the right
 task name; everything else stays unmarked; first-blood is distinguishable.
+
+**As built.**
+- **`socket.js`** — a `notification_outcome` listener merges `completed_tasks` onto the matching
+  `state.notificationEvents` row by `id === notification_id` (best-effort: a row that has scrolled
+  out of the ring simply goes unmarked). Only the **feed** is touched in this phase; the event-history
+  badges (surface 3) come from the `userEvents`↔`userEvaluations` join in Phase 5, a separate source.
+- **`dashboardState.js`** — the `feed` computed exposes a `cleared` `{label, title}` on a row when
+  `completed_tasks` is present; a multi-task burst becomes `<first-task> +N` with the full list in
+  `title`. Reactivity note: reading the (initially absent) `completed_tasks` key in the computed
+  registers the dep, so the later merge triggers a recompute (Vue 3 tracks key-add).
+- **`LiveFeed.vue`** — renders the `.sa-pip` chip (✓ circle + `Cleared:` + task label) when
+  `e.cleared`; styles lifted verbatim from the signed-off mockup surface 1. The task label caps at
+  180 px with ellipsis so a long name can't blow out the row; the full name is in the tooltip.
+- **No first-blood on the pip.** The acceptance line above ("first-blood is distinguishable") predates
+  the Phase 0 signoff, which **cut** first-blood from the pip (2026-07-07) — it lives on the drawer's
+  completed-task rows, not the feed. The pip is a plain completed-only `Cleared: <task>` marker, per
+  the mockup. `notification_outcome.completed_tasks[].first_completion` is still carried on the wire
+  (a later surface may use it), just not shown on the pip.
+- **dist/ rebuilt.** LiveFeed now ships the pip in the prod bundle, so `dist/` was rebuilt + committed
+  with the source (this also resynced the pre-existing dist drift flagged in Phase 2).
+- **Reload caveat (by design).** The pip is a live augmentation: on a full feed reload (connect /
+  reconnect / reset-live-logs) `get_notifications` returns raw notifications with no `completed_tasks`,
+  so historical rows carry no pip. Durable "what cleared this" lives in the drawer provenance
+  (surfaces 2–3), not the feed.
 
 ---
 
