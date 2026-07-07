@@ -61,7 +61,7 @@ watch(
 </script>
 
 <template>
-  <div class="sa-feed">
+  <div class="sa-feed" :class="{ 'sa-feed--offline': connectionHealth.state === 'offline' }">
     <div style="display:flex;align-items:center;gap:12px;padding:11px 16px 9px;border-bottom:1px solid rgba(var(--sa-cyan-rgb),.1);">
       <span style="font-size:14px;font-weight:700;letter-spacing:1.5px;color:var(--sa-text-2);">LIVE FEED</span>
       <span
@@ -225,6 +225,25 @@ watch(
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(14, 22, 38, 0.92), rgba(9, 15, 26, 0.92));
   overflow: hidden;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+/* Offline — the whole panel turns to a red hazard-striped ground so a dropped
+   socket reads from across the room. Static by design (no motion); driven purely
+   off connectionHealth.state === 'offline', alongside the header dot + label. */
+.sa-feed--offline {
+  border-color: rgba(var(--sa-danger-rgb), 0.42);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--sa-danger-rgb), 0.075) 0,
+      rgba(var(--sa-danger-rgb), 0.075) 13px,
+      rgba(var(--sa-danger-rgb), 0) 13px,
+      rgba(var(--sa-danger-rgb), 0) 28px
+    ),
+    linear-gradient(180deg, rgba(32, 14, 19, 0.94), rgba(20, 9, 13, 0.95));
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--sa-danger-rgb), 0.1),
+    0 0 22px rgba(var(--sa-danger-rgb), 0.08);
 }
 .sa-input {
   flex: 1;
