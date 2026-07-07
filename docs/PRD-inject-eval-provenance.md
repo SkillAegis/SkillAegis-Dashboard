@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phase 0 ✅ (mockup signed off 2026-07-07) — building phases 1–6 |
+| **Status** | Phases 0–1 ✅ (mockup signed off 2026-07-07; contract frozen in the mock) — building phases 2–6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -220,7 +220,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 | # | Phase | Layer | Effort | Risk | Status |
 |---|---|---|---|---|---|
 | 0 | Design proposal & validation (mockup) | Design | Small | — | ✅ Done (05f7887) |
-| 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ☐ |
+| 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ✅ Done (7d67420) |
 | 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ☐ |
 | 3 | Live Feed completion pip | Frontend | Small | Low | ☐ |
 | 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ☐ |
@@ -257,6 +257,10 @@ the Editor.
 
 ### Phase 1 — Contract + mock
 
+**Status: ✅ Done — 7d67420.** The additive Socket.IO contract is frozen and implemented in
+`dev_mock_server.py` only (no `src/`, no real backend). Delivered exactly as specified below;
+verified over the socket, no UI yet.
+
 Freeze the additive Socket.IO contract and implement it in `dev_mock_server.py` **only**, so every
 UI phase can be built and verified on the mock.
 
@@ -269,6 +273,32 @@ controls in `CLAUDE.md`. Keep shapes faithful to what Phase 6's real engine can 
 **Acceptance.** With the mock: `get_user_evaluations` returns well-formed attempts; completing a mock
 task emits `notification_outcome` and stamps `provenance`; failing controls produce inspectable
 failing attempts. Verified over the socket (payload shape), no UI yet.
+
+**As built (frozen contract).** Additions only — no existing event changed:
+- **`get_user_evaluations`** ack → buffer A for a user (newest-first, capped `ATTEMPT_BUFFER_SIZE=20`),
+  ungated request/ack like `get_user_events`.
+- **`user_evaluation_recorded`** push `{user_id, attempt}` on every new attempt (live + controls).
+- **`notification_outcome`** push `{notification_id, user_id, completed_tasks:[{uuid,name,first_completion}]}`,
+  emitted **after** a completing evaluation and **only** when a task cleared (feed is completed-only).
+  Ordered after the triggering `notification` so the pip merges onto an already-rendered feed row.
+- **`update_progress`** completion entries gain optional `provenance`
+  `{notification_id, attempt_id, trigger:{origin,time,http_method,url}, passing:[{evaluation_strategy,result_label}]}`.
+- **`EvaluationAttempt`** = `{id, user_id, timestamp, target_tool:'MISP'|'webhook', trigger, completed_any, checks[]}`;
+  each check `{inject_uuid, inject_name, result_label, join_type:'AND'|'OR', outcome:1|2, completed_now, evaluations[]}`;
+  each evaluation `{evaluation_strategy, result_label, outcome:1|2, score_range, debug}`.
+- **`debug`** is a list-of-groups of `{message,data,style}` steps (styles `primary`/`success`/`fail`/`error`/`''`),
+  matching `backend/utils.py:eval_data_filtering` step-for-step; a `python` evaluation's group is the raw
+  `[[{status,exit_code,stdout,stderr,duration}]]` sandbox result (no message/style — the renderer switches on
+  the `python` strategy); `query_mirror` gets the synthesized "Comparing…" + match/mismatch group (expected vs. actual).
+- **Large-dump handling.** Any step `data` carries an optional `data_meta`
+  `{bytes, shape, count_label, truncated, note?}`; a value over `DATA_DUMP_CAP_BYTES` (16 KB) is replaced by a
+  bounded **preview string** at capture time with `truncated:true` + a "truncated at capture (memory-bounded)"
+  note. A failed `data_filtering` condition's extracted-data step also carries optional `expected` + `comparison`.
+- **Degradation.** `PROVENANCE_DROP_RATE` (12%) of *seeded* completions are left provenance-less, exercising the
+  post-restore "cleared by — (provenance not retained)" path. Live completions always stamp provenance.
+- **Controls.** `POST /mock/eval-pass/<id>` (clear next task via a full evaluation → passing attempt + provenance +
+  pip), `POST /mock/eval-fail/<id>[?large=1]` (failing "checked, cleared nothing" attempt; `?large=1` forces the
+  over-cap dump). Documented in `CLAUDE.md`; reset controls clear buffer A + provenance.
 
 ---
 
