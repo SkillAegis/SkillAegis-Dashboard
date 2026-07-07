@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phases 0–1 ✅ (mockup signed off 2026-07-07; contract frozen in the mock) — building phases 2–6 |
+| **Status** | Phases 0–2 ✅ (mockup signed off 2026-07-07; contract frozen in the mock; `EvaluationDebug.vue` built + verified on the mock) — building phases 3–6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -221,7 +221,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 |---|---|---|---|---|---|
 | 0 | Design proposal & validation (mockup) | Design | Small | — | ✅ Done (05f7887) |
 | 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ✅ Done (7d67420) |
-| 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ☐ |
+| 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ✅ Done (a42ec9b) |
 | 3 | Live Feed completion pip | Frontend | Small | Low | ☐ |
 | 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ☐ |
 | 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ☐ |
@@ -304,6 +304,12 @@ failing attempts. Verified over the socket (payload shape), no UI yet.
 
 ### Phase 2 — `EvaluationDebug.vue`
 
+**Status: ✅ Done — a42ec9b.** `src/components/dashboard/EvaluationDebug.vue` ships the shared,
+read-only renderer of one captured check's `{outcome, debug}`, ported from the Editor's Inject Tester
+(`InjectTester.vue:571-702`) into the dark theme and matching the Phase 0 mockup surface 4. Verified
+against the running mock (all 7 trace kinds render faithfully; ✕/backdrop/Esc close cleanly), no UI
+wiring yet.
+
 The shared, read-only renderer of `{outcome, debug}`, ported from the Editor's Inject Tester
 outcome+debug block (`InjectTester.vue:571-702`) into the dark theme: Outcome pill
 (Successful/Failed); numbered colour-grouped step timeline; per-step success/fail/error pills +
@@ -312,6 +318,26 @@ mock attempt via a temporary harness.
 
 **Acceptance.** A passing and a failing trace render identically in spirit to the Editor; python
 traces show the sandbox detail; long data dumps are bounded and scroll.
+
+**As built.**
+- **Props** `check` (required — one task's evaluation), `trigger` (the captured Live-Feed reference),
+  `targetTool` (`'MISP'|'webhook'`); emits `close`. Renders `check.outcome` as the Outcome pill and
+  flattens every `check.evaluations[].debug` (list-of-groups) into one numbered, colour-cycled
+  (`--ed-1..6`) timeline; a `python` evaluation's group renders as the Status/Exit/Duration table +
+  STDOUT/STDERR (empty streams show a muted "(no output)").
+- **Faithful to the frozen contract:** per-step `success`/`fail`/`error` pills; backtick spans in a
+  step message render monospace (jq paths); a step's `data_meta` becomes a size/shape header ("shown
+  in full" vs the gold "over cap, previewed" + `▤` at-capture note); over-cap `data` (a pre-truncated
+  preview string) is shown verbatim while live values are `JSON.stringify`-pretty and scroll;
+  `expected`/`comparison` render as the failure footnote; `query_mirror` carries a "synthesized trace"
+  hint. Shows the trace **as captured**, never re-run.
+- **Overlay:** `Teleport` to `<body>` (escapes any transformed ancestor) with its own `--sa-*`/`--ed-*`
+  token set; dismissed by ✕ / backdrop / Esc; locks/restores body scroll.
+- **Not in the production bundle yet.** Nothing in `index.html → main.js → App → TheDahboard` imports
+  it, so `dist/` is functionally unchanged (Tailwind only content-scans it for a few unused utility
+  classes); `dist/` is rebuilt + committed in Phases 3-5 when the feed/drawer wire it in. Verified via
+  a temporary harness that pulls real attempts from the mock over `get_user_evaluations` (harness not
+  committed).
 
 ---
 
