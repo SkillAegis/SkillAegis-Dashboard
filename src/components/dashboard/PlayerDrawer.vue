@@ -23,8 +23,12 @@ import {
   selectedPlayerEvents,
   selectedPlayerEventsTotal,
   eventSearch,
-  closePlayer
+  closePlayer,
+  openTaskEvaluation,
+  activeEvaluation,
+  closeEvaluation
 } from './dashboardState.js'
+import EvaluationDebug from './EvaluationDebug.vue'
 import { reduceMotionOn } from '@/settings.js'
 
 const player = selectedPlayer
@@ -33,6 +37,7 @@ const activity = selectedPlayerActivity
 const events = selectedPlayerEvents
 const eventsTotal = selectedPlayerEventsTotal
 const search = eventSearch
+const evaluation = activeEvaluation
 const open = computed(() => player.value !== null)
 
 // Events-rail filter state: whether a query is active, and the header sub-line
@@ -79,6 +84,10 @@ function focusable() {
 }
 
 function onKeydown(e) {
+  // While the EvaluationDebug overlay is open it owns Esc + focus; defer to it so
+  // one Esc closes only the overlay (its listener fires in the bubble phase after
+  // this capture handler no-ops), not the drawer underneath.
+  if (evaluation.value) return
   if (e.key === 'Escape') {
     e.preventDefault()
     closePlayer()
@@ -216,6 +225,26 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                   <div v-else-if="t.state === 'done' && t.firstBlood" class="sa-tmeta sa-mono">
                     <span class="sa-fb">🩸 first blood</span>
                   </div>
+                  <!-- Surface 2: completed-task provenance ("cleared by …") +
+                       View evaluation. Durable line from the completion record;
+                       View opens the passing trace (full from buffer A, else the
+                       compact recorded outcome). Blank note when none was retained. -->
+                  <template v-if="t.state === 'done'">
+                    <div v-if="t.clearedBy" class="sa-prov sa-mono">
+                      <span class="lead">cleared by</span>
+                      <span class="mth" :class="{ 'mth-hook': t.clearedBy.isHook }">{{
+                        t.clearedBy.method
+                      }}</span>
+                      <span class="u">{{ t.clearedBy.url }}</span>
+                      <span v-if="t.clearedBy.atTime" class="at">@ {{ t.clearedBy.atTime }}</span>
+                      <button type="button" class="sa-viewbtn" @click="openTaskEvaluation(t.key)">
+                        ▸ View evaluation
+                      </button>
+                    </div>
+                    <div v-else class="sa-prov sa-mono">
+                      <span class="sa-prov-blank">cleared by — (provenance not retained)</span>
+                    </div>
+                  </template>
                 </div>
                 <div class="sa-trt">
                   <template v-if="t.state === 'done'">
@@ -348,6 +377,18 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
       </div>
     </aside>
   </Transition>
+
+  <!-- Captured-evaluation overlay (EvaluationDebug) — read-only, opened from a
+       completed task's "View evaluation". Teleports to <body>, so it renders
+       above the drawer regardless of where it sits in this tree. -->
+  <EvaluationDebug
+    v-if="evaluation"
+    :check="evaluation.check"
+    :trigger="evaluation.trigger"
+    :target-tool="evaluation.targetTool"
+    :trace-retained="evaluation.traceRetained"
+    @close="closeEvaluation"
+  />
 </template>
 
 <style scoped>
@@ -712,6 +753,69 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   background: var(--sa-cyan);
   box-shadow: 0 0 7px rgba(var(--sa-cyan-rgb), 0.8);
   animation: sa-drawer-blink 1.3s infinite;
+}
+
+/* completed-task provenance line (surface 2) — "cleared by <method> <url> @ time"
+   + a View evaluation control; ported from the signed-off mockup. */
+.sa-prov {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--sa-text-5);
+}
+.sa-prov .lead {
+  color: var(--sa-text-6);
+}
+.sa-prov .mth {
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--sa-mint);
+  background: rgba(var(--sa-mint-rgb), 0.12);
+}
+/* webhook clears borrow the app-wide violet treatment (HOOK reads the same
+   everywhere), matching the event rail and the Debug view's trigger banner. */
+.sa-prov .mth-hook {
+  color: var(--sa-violet);
+  background: rgba(var(--sa-violet-rgb), 0.16);
+}
+.sa-prov .u {
+  color: var(--sa-text-3);
+}
+.sa-prov .at {
+  color: var(--sa-text-5);
+}
+.sa-prov-blank {
+  color: var(--sa-text-6);
+  font-style: italic;
+}
+.sa-viewbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), 0.09);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.28);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-viewbtn:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
+  border-color: rgba(var(--sa-cyan-rgb), 0.5);
+}
+.sa-viewbtn:focus-visible {
+  outline: 2px solid var(--sa-cyan);
+  outline-offset: 2px;
 }
 .sa-trt {
   text-align: right;

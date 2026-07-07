@@ -33,7 +33,10 @@ import {
   toggleApiQueryMode,
   userEvents,
   loadUserEvents,
-  clearUserEvents
+  clearUserEvents,
+  userEvaluations,
+  loadUserEvaluations,
+  clearUserEvaluations
 } from '@/socket'
 
 /* ------------------------------------------------------------------ */
@@ -480,11 +483,81 @@ export function openPlayer(id) {
   // Seed the events rail with this player's per-user history (Phase 4); the
   // socket `notification` handler then live-appends new events for them.
   loadUserEvents(id)
+  // Seed buffer A (captured evaluation attempts) so the completed-task
+  // "View evaluation" can open the full trace (PRD-inject-eval-provenance).
+  loadUserEvaluations(id)
 }
 export function closePlayer() {
   selectedPlayerId.value = null
   eventSearch.value = ''
   clearUserEvents()
+  clearUserEvaluations()
+  // A captured-evaluation overlay must not outlive the drawer it was opened from.
+  closeEvaluation()
+}
+
+/* ------------------------------------------------------------------ */
+/* Captured-evaluation overlay (EvaluationDebug)                       */
+/* ------------------------------------------------------------------ */
+// The evaluation currently shown in the read-only EvaluationDebug overlay, or
+// null when closed. Shared drawer state so any surface can open the same renderer:
+// the completed-task "View evaluation" (Phase 4) and the event-history "Debug"
+// (Phase 5). Shape: { check, trigger, targetTool, traceRetained }.
+export const activeEvaluation = ref(null)
+const EVAL_OUTCOME_SUCCESS = 1 // mirrors EvaluationDebug's OUTCOME_SUCCESS
+
+export function openEvaluation(payload) {
+  activeEvaluation.value = payload
+}
+export function closeEvaluation() {
+  activeEvaluation.value = null
+}
+
+// Surface 2 (Phase 4): open the passing evaluation for a completed task. Resolve
+// the rich captured attempt from buffer A by the completion's
+// `provenance.attempt_id`; if it has rolled out of the ring, degrade to the
+// compact, session-durable provenance (recorded outcome + passing strategies, no
+// step trace). No-op when the task carries no provenance (the View control is
+// hidden in that case anyway).
+export function openTaskEvaluation(taskUuid) {
+  const id = selectedPlayerId.value
+  const ex = selectedExercise.value
+  if (id === null || !ex) return
+  const c = progresses.value?.[id]?.exercises?.[ex.uuid]?.tasks_completion?.[taskUuid]
+  const prov = c && c !== false ? c.provenance : null
+  if (!prov) return
+
+  // Full trace, while the attempt is still retained in buffer A.
+  const attempt = userEvaluations.value.find((a) => a.id === prov.attempt_id)
+  const check = attempt?.checks?.find((ck) => ck.inject_uuid === taskUuid)
+  if (attempt && check) {
+    openEvaluation({
+      check,
+      trigger: attempt.trigger,
+      targetTool: attempt.target_tool || '',
+      traceRetained: true
+    })
+    return
+  }
+
+  // Degraded: rebuild a minimal passing check from the compact provenance.
+  const task = ex.tasks.find((t) => t.uuid === taskUuid)
+  openEvaluation({
+    check: {
+      inject_uuid: taskUuid,
+      inject_name: task?.name || '',
+      outcome: EVAL_OUTCOME_SUCCESS,
+      evaluations: (prov.passing || []).map((p) => ({
+        evaluation_strategy: p.evaluation_strategy,
+        result_label: p.result_label,
+        outcome: EVAL_OUTCOME_SUCCESS,
+        debug: []
+      }))
+    },
+    trigger: prov.trigger,
+    targetTool: prov.trigger?.origin === 'webhook' ? 'webhook' : 'MISP',
+    traceRetained: false
+  })
 }
 
 // Live status chips for the drawer header, mapped from the same
@@ -639,6 +712,18 @@ export const selectedPlayerTasks = computed(() => {
       const atMs = c.timestamp ? c.timestamp * 1000 : null
       const atLabel = atMs !== null && start !== null ? fmtDur(atMs - start) : '—'
       const gapMs = g?.ms ?? null
+      // Surface 2 (Phase 4): "cleared by <method> <url> @ <time>" from the durable
+      // completion provenance. Null when none was retained (post-restore path) →
+      // the row shows the "(provenance not retained)" note and no View control.
+      const pv = c.provenance
+      const clearedBy = pv
+        ? {
+            method: pv.trigger?.http_method || '',
+            url: pv.trigger?.url || '',
+            atTime: pv.trigger?.time || '',
+            isHook: pv.trigger?.origin === 'webhook'
+          }
+        : null
       return {
         key: task.uuid,
         pos,
@@ -646,6 +731,7 @@ export const selectedPlayerTasks = computed(() => {
         name: task.name,
         state: 'done',
         firstBlood: c.first_completion === true,
+        clearedBy,
         atLabel,
         atTitle: atLabel !== '—' ? `Completed at ${atLabel} into the exercise` : 'Completed',
         gapLabel: gapMs !== null ? '+' + fmtClock(gapMs / 1000) : '—',

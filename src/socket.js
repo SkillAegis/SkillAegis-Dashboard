@@ -9,6 +9,9 @@ const MAX_LIVE_LOG = 30
 // Per-user drawer history is a deeper ring than the global feed (mirrors the
 // backend's PER_USER_NOTIFICATION_BUFFER_SIZE).
 const MAX_USER_EVENTS = 50
+// Per-user captured-evaluation ring (buffer A), mirroring the backend's
+// ATTEMPT_BUFFER_SIZE — the "what went wrong on my last tries" store.
+const MAX_USER_EVALUATIONS = 20
 
 const initial_state = {
   notificationEvents: [],
@@ -25,11 +28,15 @@ const initial_state = {
   userStats: {},
   diagnostic: {},
   userEvents: [],
+  userEvaluations: [],
 }
 
 // Which participant `state.userEvents` currently holds, so the live `notification`
 // push only appends events for the open drawer's player (null when closed).
 let eventsUserId = null
+// Same, for `state.userEvaluations` (buffer A): the live `user_evaluation_recorded`
+// push only prepends attempts for the open drawer's player (null when closed).
+let evaluationsUserId = null
 
 const state = reactive({ ...initial_state })
 const connectionState = reactive({
@@ -72,6 +79,7 @@ export const userAuthenticated = computed(() => connectionState.is_authenticated
 export const userTaskCheckInProgress = computed(() => state.userTaskCheckInProgress)
 export const userStats = computed(() => state.userStats)
 export const userEvents = computed(() => state.userEvents)
+export const userEvaluations = computed(() => state.userEvaluations)
 
 export function resetState() {
   Object.assign(state, initial_state)
@@ -136,6 +144,26 @@ export function loadUserEvents(user_id) {
 export function clearUserEvents() {
   eventsUserId = null
   state.userEvents = []
+}
+
+// Player drill-down drawer: seed buffer A (this participant's ring of captured
+// EvaluationAttempts) so the drawer's completed-task "View evaluation" (Phase 4)
+// and event-history outcomes (Phase 5) have the full traces; the
+// `user_evaluation_recorded` handler then live-prepends new attempts for them.
+export function loadUserEvaluations(user_id) {
+  evaluationsUserId = user_id
+  state.userEvaluations = []
+  socket.emit('get_user_evaluations', { user_id }, (evals) => {
+    // Guard against a stale ack after the drawer moved to another player / closed.
+    if (evaluationsUserId === user_id) {
+      state.userEvaluations = Array.isArray(evals) ? evals : []
+    }
+  })
+}
+
+export function clearUserEvaluations() {
+  evaluationsUserId = null
+  state.userEvaluations = []
 }
 
 export function reloadFromDisk() {
@@ -470,6 +498,16 @@ socket.on('notification_outcome', ({ notification_id, completed_tasks }) => {
   const row = state.notificationEvents.find((n) => n.id === notification_id)
   if (row) {
     row.completed_tasks = Array.isArray(completed_tasks) ? completed_tasks : []
+  }
+})
+
+// A newly captured evaluation attempt (buffer A). Live-prepend to the open
+// drawer's evaluation ring for this player only, so its "View evaluation" traces
+// stay current as completions happen while the drawer is open — mirrors how
+// `notification` feeds `userEvents`.
+socket.on('user_evaluation_recorded', ({ user_id, attempt }) => {
+  if (evaluationsUserId !== null && user_id === evaluationsUserId && attempt) {
+    addLimited(state.userEvaluations, attempt, MAX_USER_EVALUATIONS)
   }
 })
 

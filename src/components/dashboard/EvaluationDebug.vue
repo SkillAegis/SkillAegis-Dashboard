@@ -29,6 +29,11 @@ const props = defineProps({
   trigger: { type: Object, default: null },
   // 'MISP' | 'webhook' — shown in the banner.
   targetTool: { type: String, default: '' },
+  // False when the full step trace has rolled out of the retention buffer and
+  // only the compact recorded outcome survives (surface 2 degraded path) — the
+  // Debug section then says so instead of showing an empty timeline as if the
+  // action ran no checks.
+  traceRetained: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['close'])
@@ -179,7 +184,10 @@ onBeforeUnmount(() => {
 
           <div class="ed-debug-lbl">
             Debug
-            <span v-if="hasSynthesized" class="ed-note"
+            <span v-if="!traceRetained" class="ed-note"
+              >· full step trace no longer retained — showing the recorded outcome</span
+            >
+            <span v-else-if="hasSynthesized" class="ed-note"
               >· synthesized — <span class="sa-mono">query_mirror</span> is a pure equality check
               with no native trace</span
             >
