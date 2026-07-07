@@ -18,6 +18,11 @@ headline states for inspection or screenshots:
   * ``/mock/clear/<user_id>`` — one player clears (drives the all-clear burst),
   * ``/mock/checking/<user_id>`` — fire a "being validated" pulse on that
     player's next available task (drives the per-task spinner),
+  * ``/mock/eval-pass/<user_id>`` — clear that player's next available task via a
+    full evaluation (inspectable passing attempt + provenance + feed pip),
+  * ``/mock/eval-fail/<user_id>`` — record a failing "checked, cleared nothing"
+    attempt on that player's next available task(s); ``?large=1`` forces the
+    over-cap bounded-preview data dump,
   * ``/mock/empty`` — wipe all progress to a fresh board,
   * ``/mock/reset`` — rebuild the synthetic world from scratch,
   * ``/mock/zmq-stale`` · ``/mock/zmq-fresh`` — freeze / resume the reported ZMQ
@@ -42,6 +47,8 @@ credentials are accepted.
 """
 
 import argparse
+import copy
+import json
 import random
 import re
 import time
@@ -63,6 +70,20 @@ ACTIVITY_BUFFER = 32          # heat bars per player
 HISTORY_BUFFER = 120          # 5s buckets in the feed timeline (~10 min shown)
 PER_USER_HISTORY = 50         # per-player event ring for the drill-down drawer
                               # (deeper than the 30-event global feed)
+
+# --- Inject-evaluation provenance (PRD-inject-eval-provenance) ----------------
+# The dashboard's "why did / didn't this count?" store. The real backend's eval
+# engine already produces a {message,data,style} debug trace (backend/utils.py);
+# the mock synthesizes the same shape so the whole UI can be built against it.
+ATTEMPT_BUFFER_SIZE = 20      # buffer A: last-X evaluation attempts kept per user
+                              # (ephemeral, mirrors db.USER_EVALUATION_ATTEMPTS)
+DATA_DUMP_CAP_BYTES = 16384   # a step's `data` over this is stored as a bounded
+                              # preview *at capture time* (never the full MB)
+PROVENANCE_DROP_RATE = 0.12   # fraction of *seeded* completions deliberately left
+                              # without provenance, to exercise the post-restore
+                              # "cleared by — (provenance not retained)" path
+INJECT_EVAL_SUCCESS = 1       # outcome codes — verbatim from the Editor's contract
+INJECT_EVAL_FAIL = 2          # (SkillAegis-Editor InjectTester: OUTCOME_SUCCESS/FAILED)
 
 _DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
@@ -96,6 +117,12 @@ STATE = {
     "notifications": [],       # newest first
     "user_notifications": {},  # user_id -> [notif,...] newest first (drawer history)
     "notif_id": 0,
+    "evaluations": {},         # buffer A: user_id -> [EvaluationAttempt,...] newest first,
+                               # capped at ATTEMPT_BUFFER_SIZE (get_user_evaluations)
+    "provenance": {},          # provenance[uid][ex_uuid][task_index] = compact clear-origin
+                               # dict; session-durable (survives buffer A rolling over)
+    "task_actions": {},        # task_uuid -> synthetic {action, evaluations} template
+    "eval_id": 0,
     "verbose": False,          # feed filter: show all traffic (toggle_verbose_mode)
     "apiquery": False,         # feed filter: API requests only (toggle_apiquery_mode)
     "zmq_frozen_at": None,     # if set, keep_alive reports this frozen epoch sec
@@ -142,6 +169,7 @@ def build_world(n_players):
     ]
     # Both selected by default so the header's scenario switcher is visible.
     STATE["selected"] = [ex["uuid"] for ex in STATE["exercises"]]
+    _resolve_task_actions()   # bind each task to its synthetic action/eval template
 
     STATE["users"] = [
         {"user_id": i, "email": f"agent{i:02d}@{ORGS[i % len(ORGS)]}"}
@@ -152,6 +180,10 @@ def build_world(n_players):
     STATE["fire"] = {u["user_id"]: None for u in STATE["users"]}
     STATE["activity"] = {u["user_id"]: [0] * ACTIVITY_BUFFER for u in STATE["users"]}
     STATE["user_notifications"] = {u["user_id"]: [] for u in STATE["users"]}
+    STATE["evaluations"] = {u["user_id"]: [] for u in STATE["users"]}
+    STATE["provenance"] = {u["user_id"]: {ex["uuid"]: {} for ex in STATE["exercises"]}
+                           for u in STATE["users"]}
+    STATE["eval_id"] = 0
 
     # Seed a believable mid-session board: most players partway, a couple already
     # cleared (so the clear bar / Just Cleared / Finishers show on first paint).
@@ -214,6 +246,13 @@ def build_world(n_players):
             if _accept(notif):
                 _record_user_notification(notif)
                 made += 1
+
+    # Seed the evaluation history last (again after the board, keeping its seed
+    # sequence unchanged): per-user attempt buffers, completion provenance, and a
+    # guaranteed over-cap dump so every Debug-view state has data on first load.
+    for u in STATE["users"]:
+        _seed_user_evaluations(u)
+    _seed_large_dump_attempt(STATE["users"][0], STATE["exercises"][0])
 
 
 def _ignite(uid, last_completion):
@@ -357,8 +396,14 @@ def build_progress():
             tc = {}
             for ti, task in enumerate(ex["tasks"]):
                 if ti in done:
-                    tc[task["uuid"]] = {"user_id": uid, "timestamp": done[ti],
-                                        "first_completion": first_by_task.get((ex["uuid"], ti)) == uid}
+                    entry = {"user_id": uid, "timestamp": done[ti],
+                             "first_completion": first_by_task.get((ex["uuid"], ti)) == uid}
+                    # Completion provenance (data model B) rides the existing
+                    # snapshot — no new event needed for the drawer's "cleared by".
+                    prov = STATE["provenance"].get(uid, {}).get(ex["uuid"], {}).get(ti)
+                    if prov is not None:
+                        entry["provenance"] = prov
+                    tc[task["uuid"]] = entry
                 else:
                     tc[task["uuid"]] = False
             exercises[ex["uuid"]] = {
@@ -460,6 +505,509 @@ def _record_user_notification(notif):
 
 
 # ----------------------------------------------------------------------------
+# Inject-evaluation provenance — synthetic {outcome, debug} attempts
+# (PRD-inject-eval-provenance). Every helper here fabricates data in the exact
+# shape the real engine emits: `debug` is a list-of-groups, each group a list of
+# {message,data,style} steps (styles: primary/success/fail/error/''); a `python`
+# evaluation's group is [[{status,exit_code,stdout,stderr,duration}]] verbatim
+# from sandboxClient. Kept faithful so Phase 6's real backend can drop straight
+# in behind the same UI.
+# ----------------------------------------------------------------------------
+
+# Per-task synthetic action + evaluation template, keyed by task name (the mock's
+# TASK_NAMES). Gives each task a plausible clearing action (the Live Feed row) and
+# one evaluation whose strategy dictates the debug trace kind. Resolved once per
+# task-uuid into STATE["task_actions"] so a task always looks the same everywhere.
+_TASK_TEMPLATES = {
+    "Create the event": {
+        "origin": "zmq", "http_method": "POST", "url": "/events/add",
+        "result_label": "Event created", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "Event has a populated info field",
+            "paths": [".Event.info"],
+            "fail": {"extract": "", "expected": ["<non-empty info>"], "comparison": "count"},
+        }],
+    },
+    "Add the domain attribute": {
+        "origin": "zmq", "http_method": "POST", "url": "/attributes/add",
+        "result_label": "Domain attribute present", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "A domain attribute was added",
+            "paths": ['.Event.Attribute[] | select(.type == "domain").value'],
+            "fail": {"extract": ["192.0.2.10", "198.51.100.4"],
+                     "expected": ["evil.example"], "comparison": "contains"},
+        }],
+    },
+    "Tag as TLP:AMBER": {
+        "origin": "zmq", "http_method": "POST", "url": "/tags/attachTag",
+        "result_label": "Event tagged tlp:amber", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "Event carries the tlp:amber tag",
+            "paths": [".Event.Tag[].name"],
+            "fail": {"extract": ["tlp:white", 'misp-galaxy:sector="IT"', 'workflow:state="draft"'],
+                     "expected": ["tlp:amber"], "comparison": "contains"},
+        }],
+    },
+    "Add the IP-src attribute": {
+        "origin": "zmq", "http_method": "POST", "url": "/attributes/add",
+        "result_label": "IP-src attribute present", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "An ip-src attribute was added",
+            "paths": ['.Event.Attribute[] | select(.type == "ip-src").value'],
+            "fail": {"extract": [], "expected": ["203.0.113.7"], "comparison": "count"},
+        }],
+    },
+    "Create the threat-actor galaxy": {
+        "origin": "zmq", "http_method": "POST", "url": "/galaxies/attachCluster/42",
+        "result_label": "Threat-actor galaxy attached", "join_type": "OR",
+        "evals": [{
+            "strategy": "query_mirror", "result": "Threat-actor galaxy attached",
+            "expected": {"response": [{"Galaxy": {"type": "threat-actor", "name": "APT29"}}]},
+            "actual": {"response": []},
+        }],
+    },
+    "Publish the event": {
+        "origin": "zmq", "http_method": "POST", "url": "/events/publish/42",
+        "result_label": "Event is published", "join_type": "AND",
+        "evals": [{
+            "strategy": "python", "result": "Event is published",
+            "stdout_pass": "checking published flag…\nEvent.published == True\nreturning True",
+            "stdout_fail": "checking published flag…\nEvent.published == False\nreturning False",
+        }],
+    },
+    "Add a sighting": {
+        "origin": "webhook", "webhook_tool": "sightings",
+        "result_label": "Sighting recorded", "join_type": "AND",
+        "evals": [{
+            "strategy": "python", "result": "At least one sighting recorded",
+            "stdout_pass": ("checking sightings for 3 indicators…\n"
+                            "  185.99.132.4      → 2 sightings ✓\n"
+                            "  evil-phish.example → 1 sighting  ✓\n"
+                            "  a1b2c3…f9         → 1 sighting  ✓\n"
+                            "all indicators sighted — returning True"),
+            "stdout_fail": ("checking sightings for 3 indicators…\n"
+                            "  185.99.132.4      → 0 sightings ✗\n"
+                            "no sightings recorded yet — returning False"),
+            "stderr": "/sandbox/eval.py:14: DeprecationWarning: use Sighting.list() instead of legacy fetch",
+        }],
+    },
+    "Propose an attribute edit": {
+        "origin": "zmq", "http_method": "POST", "url": "/shadow_attributes/add/42",
+        "result_label": "A proposal exists on the event", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "A shadow attribute (proposal) exists",
+            "paths": [".Event.ShadowAttribute | length"],
+            "fail": {"extract": 0, "expected": [">0"], "comparison": "count"},
+        }],
+    },
+    "Add the file hash": {
+        "origin": "zmq", "http_method": "POST", "url": "/objects/add/42",
+        "result_label": "A file hash was added", "join_type": "AND",
+        "evals": [{
+            "strategy": "data_filtering", "result": "A sha256 hash was added",
+            "paths": ['.Event.Object[].Attribute[] | select(.type == "sha256").value'],
+            "fail": {"extract": ["not-a-valid-hash"], "expected": ["a1b2c3…7788"],
+                     "comparison": "contains", "large": True},
+        }],
+    },
+    "Enrich via module": {
+        "origin": "webhook", "webhook_tool": "enrichment",
+        "result_label": "Indicators enriched", "join_type": "AND",
+        "evals": [{
+            "strategy": "python", "result": "Enrichment module returned data",
+            "stdout_pass": "enriching 3 indicators via module…\nreceived 5 related objects\nreturning True",
+            "stdout_fail": "enriching 3 indicators via module…\nmodule returned no data\nreturning False",
+        }],
+    },
+}
+_DEFAULT_TEMPLATE = "Create the event"
+
+
+def _resolve_task_actions():
+    """Bind each task-uuid to its (deep-copied) action template, scoring each
+    evaluation to the task's own points. Kept off the task dicts themselves so
+    `get_exercises` stays clean."""
+    STATE["task_actions"] = {}
+    for ex in STATE["exercises"]:
+        for task in ex["tasks"]:
+            tmpl = copy.deepcopy(_TASK_TEMPLATES.get(task["name"],
+                                                     _TASK_TEMPLATES[_DEFAULT_TEMPLATE]))
+            for ev in tmpl["evals"]:
+                ev["score"] = [0, task["score"]]
+            STATE["task_actions"][task["uuid"]] = tmpl
+
+
+def _task_action(ex, ti):
+    return STATE["task_actions"][ex["tasks"][ti]["uuid"]]
+
+
+def _available_indices(ex, done):
+    """Task indices the engine would actually check on an action: incomplete and
+    (for the chained exercise) not still locked behind an unmet prerequisite."""
+    avail = []
+    for ti, t in enumerate(ex["tasks"]):
+        if ti in done:
+            continue
+        req = (t.get("requirements") or {}).get("inject_uuid")
+        if req is not None:
+            req_ti = _find_task_index(ex, req)
+            if req_ti is not None and req_ti not in done:
+                continue
+        avail.append(ti)
+    return avail
+
+
+def _data_meta(value):
+    """Return (display_value, meta) for a step's extracted `data`. meta carries a
+    size/shape header (bytes · shape · count) so the Debug view can annotate every
+    dump. A value serializing to more than DATA_DUMP_CAP_BYTES is replaced by a
+    bounded preview *string* (truncated="over cap") — the mock, like Phase 6, never
+    retains the full multi-MB value."""
+    raw = json.dumps(value, ensure_ascii=False)
+    nbytes = len(raw.encode("utf-8"))
+    if isinstance(value, bool):
+        shape, count = "boolean", "boolean"
+    elif isinstance(value, list):
+        shape, count = "array", f"{len(value)} item{'' if len(value) == 1 else 's'}"
+    elif isinstance(value, dict):
+        shape, count = "object", f"{len(value)} key{'' if len(value) == 1 else 's'}"
+    elif isinstance(value, str):
+        shape, count = "string", f"{len(value)} char{'' if len(value) == 1 else 's'}"
+    elif value is None:
+        shape, count = "null", "null"
+    else:
+        shape, count = "number", "number"
+    meta = {"bytes": nbytes, "shape": shape, "count_label": count, "truncated": False}
+    if nbytes > DATA_DUMP_CAP_BYTES:
+        preview = raw[:DATA_DUMP_CAP_BYTES]
+        meta["truncated"] = True
+        meta["note"] = (f"showing first {DATA_DUMP_CAP_BYTES // 1024} KB of "
+                        f"{_human_bytes(nbytes)} · remainder truncated at capture "
+                        f"(buffer is memory-bounded — the full value is not retained)")
+        return preview, meta
+    return value, meta
+
+
+def _human_bytes(n):
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n / 1024:.1f} {unit}"
+        n /= 1024
+
+
+# A fabricated "multi-MB MISP event" whose byte count is reported honestly but
+# whose payload is stored only as a bounded preview — exactly the shape the Debug
+# view's large-dump handling renders (size/shape header + "truncated at capture").
+_BIG_EVENT_PREVIEW = json.dumps({
+    "Event": {
+        "uuid": "6f1e2c9a-4b7d-4e02-9f1a-2c8e5b0a11c3",
+        "info": "Imported incident bundle — APT phishing wave",
+        "date": "2026-07-07", "threat_level_id": "2", "analysis": "1",
+        "Attribute": [
+            {"type": "ip-dst", "category": "Network activity", "value": "185.99.132.4", "to_ids": True},
+            {"type": "domain", "category": "Network activity", "value": "evil-phish.example", "to_ids": True},
+            {"type": "sha256", "category": "Payload delivery", "value": "a1b2c3d4e5f6…7788", "to_ids": True},
+            {"type": "url", "category": "Network activity", "value": "http://evil-phish…", "to_ids": True},
+        ],
+    },
+}, indent=2)
+
+
+def _big_dump_meta():
+    """(preview, meta) for an over-cap extract without ever building the MB of
+    data. Reports a realistic large size and object shape."""
+    return _BIG_EVENT_PREVIEW, {
+        "bytes": 2_517_213, "shape": "object",
+        "count_label": "1,284 attributes · 96 objects", "truncated": True,
+        "note": "showing first 16 KB of 2.4 MB · remainder truncated at capture "
+                "(buffer is memory-bounded — the full event is not retained)",
+    }
+
+
+def _debug_data_filtering(ev, passing, large=False):
+    """List-of-groups mirroring backend/utils.py:eval_data_filtering exactly."""
+    groups = []
+    if passing:
+        for path in ev["paths"]:
+            groups.append([
+                {"message": f"Testing `{path}`", "data": {}, "style": "primary"},
+                {"message": "Condition satisfied", "data": {}, "style": "success"},
+            ])
+        return groups
+    # Failing: the real engine breaks out on the first unsatisfied param, so only
+    # the first group appears.
+    path = ev["paths"][0]
+    fail = ev.get("fail", {})
+    if large or fail.get("large"):
+        preview, meta = _big_dump_meta()
+        return [[
+            {"message": f"Testing `{path}`", "data": {}, "style": "primary"},
+            {"message": "The provided path could not extract data",
+             "data": preview, "data_meta": meta, "style": "error"},
+        ]]
+    disp, meta = _data_meta(fail.get("extract", []))
+    extracted_step = {"message": "The provided path extracted the following data to validate",
+                      "data": disp, "data_meta": meta, "style": ""}
+    if "expected" in fail:
+        extracted_step["expected"] = fail["expected"]
+    if "comparison" in fail:
+        extracted_step["comparison"] = fail["comparison"]
+    return [[
+        {"message": f"Testing `{path}`", "data": {}, "style": "primary"},
+        {"message": "Condition not satisfied", "data": {}, "style": "fail"},
+        extracted_step,
+    ]]
+
+
+def _debug_python(ev, passing):
+    """[[result]] mirroring sandboxClient.run(debug=True): a single group holding
+    the raw sandbox result dict (no message/style — the Debug view switches on the
+    evaluation's `python` strategy to render the Status/Exit/Duration table)."""
+    result = {
+        "status": "success",
+        "exit_code": 0,
+        "duration": round(random.uniform(0.18, 0.92), 2),
+        "stdout": ev["stdout_pass"] if passing else ev["stdout_fail"],
+        "stderr": ev.get("stderr", ""),
+    }
+    return [[result]]
+
+
+def _debug_query_mirror(ev, passing):
+    """Synthesized trace (query_mirror is a pure equality check with no native
+    trace — PRD decision): a primary "Comparing…" step + a success/fail step
+    carrying expected vs. actual."""
+    expected = ev["expected"]
+    actual = expected if passing else ev["actual"]
+    disp, meta = _data_meta({"expected": expected, "actual": actual})
+    outcome_step = {
+        "message": ("Query result matches expected" if passing
+                    else "Query result does not match expected"),
+        "data": disp, "data_meta": meta,
+        "style": "success" if passing else "fail",
+    }
+    return [[
+        {"message": "Comparing query result against expected", "data": {}, "style": "primary"},
+        outcome_step,
+    ]]
+
+
+def _build_evaluation(ev, passing, large=False):
+    strat = ev["strategy"]
+    if strat == "python":
+        debug = _debug_python(ev, passing)
+    elif strat == "query_mirror":
+        debug = _debug_query_mirror(ev, passing)
+    else:
+        debug = _debug_data_filtering(ev, passing, large=large)
+    return {
+        "evaluation_strategy": strat,
+        "result_label": ev["result"],
+        "outcome": INJECT_EVAL_SUCCESS if passing else INJECT_EVAL_FAIL,
+        "score_range": ev.get("score", [0, 10]),
+        "debug": debug,
+    }
+
+
+def _build_check(ex, ti, passing, large=False):
+    task = ex["tasks"][ti]
+    tmpl = _task_action(ex, ti)
+    return {
+        "inject_uuid": task["uuid"],
+        "inject_name": task["name"],
+        "result_label": tmpl["result_label"],
+        "join_type": tmpl["join_type"],
+        "outcome": INJECT_EVAL_SUCCESS if passing else INJECT_EVAL_FAIL,
+        "completed_now": passing,
+        "evaluations": [_build_evaluation(ev, passing, large=large) for ev in tmpl["evals"]],
+    }
+
+
+def _sample_action_payload(ex, ti):
+    task = ex["tasks"][ti]
+    return {"action": "edit", "inject": task["name"], "event_id": str(random.randint(10, 99))}
+
+
+def _eval_notification(user, ex, ti, ts):
+    """A Live Feed notification for the action that triggered an evaluation, in
+    the real backend's notification shape (zmq: url/http_method/payload/is_api_request;
+    webhook: target_tool + a "@data - N byte(s)" string, no url). Its `id` is what
+    the attempt/provenance and notification_outcome all key off."""
+    STATE["notif_id"] += 1
+    nid = STATE["notif_id"]
+    tmpl = _task_action(ex, ti)
+    tstr = time.strftime("%H:%M:%S", time.localtime(ts))
+    base = {"id": nid, "user_id": user["user_id"], "user": user["email"],
+            "time": tstr, "response_code": 200, "user_agent": "PyMISP/2.4"}
+    if tmpl["origin"] == "webhook":
+        return {**base, "notification_origin": "webhook",
+                "target_tool": tmpl["webhook_tool"],
+                "payload": f"@data - {random.randint(400, 1600)} byte(s), "
+                           f"{random.randint(4, 12)} key(s)"}
+    return {**base, "notification_origin": "zmq", "url": tmpl["url"],
+            "http_method": tmpl["http_method"], "payload": _sample_action_payload(ex, ti),
+            "is_api_request": True}
+
+
+def _trigger_from_notif(notif):
+    """The compact Live-Feed reference an attempt/provenance carries. Webhooks have
+    no url/method → the row (and Debug trigger line) shows HOOK <target_tool>."""
+    is_web = notif.get("notification_origin") == "webhook"
+    return {
+        "notification_id": notif["id"],
+        "origin": notif.get("notification_origin"),
+        "time": notif["time"],
+        "http_method": "HOOK" if is_web else notif.get("http_method"),
+        "url": (notif.get("target_tool") or "webhook") if is_web else notif.get("url"),
+        "target_tool": notif.get("target_tool"),
+        "payload": _truncate_trigger_payload(notif.get("payload")),
+    }
+
+
+def _truncate_trigger_payload(payload):
+    """Bound the evaluated-data snapshot the same way Phase 6 must. Mock payloads
+    are tiny, so this only ever bites a pathological string."""
+    if isinstance(payload, str) and len(payload.encode("utf-8")) > DATA_DUMP_CAP_BYTES:
+        return payload[:DATA_DUMP_CAP_BYTES] + "…"
+    return payload
+
+
+def _build_attempt(user, ex, ts, notif, checked_indices, completed_indices, large=False):
+    """One EvaluationAttempt: the action, plus one check per *available* task it was
+    evaluated against, each check carrying its evaluations' debug traces."""
+    STATE["eval_id"] += 1
+    checks = [_build_check(ex, ti, ti in completed_indices, large=large)
+              for ti in checked_indices]
+    trig = _trigger_from_notif(notif)
+    return {
+        "id": STATE["eval_id"],
+        "user_id": user["user_id"],
+        "timestamp": ts,
+        "target_tool": "webhook" if trig["origin"] == "webhook" else "MISP",
+        "trigger": trig,
+        "completed_any": bool(completed_indices),
+        "checks": checks,
+    }
+
+
+def _push_attempt(uid, attempt):
+    buf = STATE["evaluations"].setdefault(uid, [])
+    buf.insert(0, attempt)
+    del buf[ATTEMPT_BUFFER_SIZE:]
+
+
+def _is_first_completion(uid, ex, ti):
+    my_ts = STATE["done"][uid][ex["uuid"]].get(ti)
+    if my_ts is None:
+        return False
+    for u in STATE["users"]:
+        other = STATE["done"][u["user_id"]][ex["uuid"]].get(ti)
+        if other is not None and other < my_ts:
+            return False
+    return True
+
+
+def _set_provenance(uid, ex, ti, notif, attempt, check):
+    """Attach compact, session-durable clear-origin to a completion (data model B).
+    Survives buffer A rolling over; the full trace stays in A only while retained."""
+    trig = attempt["trigger"]
+    STATE["provenance"][uid][ex["uuid"]][ti] = {
+        "notification_id": notif["id"],
+        "attempt_id": attempt["id"],
+        "trigger": {"origin": trig["origin"], "time": trig["time"],
+                    "http_method": trig["http_method"], "url": trig["url"]},
+        "passing": [{"evaluation_strategy": e["evaluation_strategy"],
+                     "result_label": e["result_label"]}
+                    for e in check["evaluations"] if e["outcome"] == INJECT_EVAL_SUCCESS],
+    }
+
+
+def _seed_user_evaluations(user):
+    """Backfill a believable evaluation history: one passing attempt per completed
+    task (in completion order), plus a few failing "checked, cleared nothing"
+    attempts on the current available task(s). Provenance is set for (most) passes;
+    buffer A keeps only the newest ATTEMPT_BUFFER_SIZE, so older completions keep
+    their compact provenance but lose the full trace — the real lifecycle."""
+    uid = user["user_id"]
+    selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
+    events = []  # (ts, ex, checked_indices, completed_indices)
+    for ex in selected:
+        done = STATE["done"][uid][ex["uuid"]]
+        for ti, ts in sorted(done.items(), key=lambda kv: kv[1]):
+            events.append((ts, ex, [ti], [ti]))
+        avail = _available_indices(ex, done)
+        if avail:
+            base = max(done.values()) if done else (time.time() - 300)
+            for k in range(random.randint(0, 2)):
+                # occasionally check two available tasks at once → "checked 2 tasks"
+                checked = avail[:2] if (k == 0 and len(avail) >= 2 and random.random() < 0.5) else [avail[0]]
+                events.append((base + 20 + 40 * k, ex, checked, []))
+    events.sort(key=lambda e: e[0])
+    for ts, ex, checked, completed in events:
+        notif = _eval_notification(user, ex, (completed or checked)[0], ts)
+        _record_user_notification(notif)
+        attempt = _build_attempt(user, ex, ts, notif, checked, completed)
+        _push_attempt(uid, attempt)
+        for ti in completed:
+            if random.random() < PROVENANCE_DROP_RATE:
+                continue  # exercise the post-restore "provenance not retained" path
+            check = next(c for c in attempt["checks"]
+                         if c["inject_uuid"] == ex["tasks"][ti]["uuid"])
+            _set_provenance(uid, ex, ti, notif, attempt, check)
+
+
+def _seed_large_dump_attempt(user, ex):
+    """Ensure one over-cap failing attempt is inspectable on first load, so the
+    Debug view's bounded-preview handling has data without waiting on a control."""
+    ti = next((i for i in range(len(ex["tasks"]))
+               if _task_action(ex, i)["evals"][0]["strategy"] == "data_filtering"), 0)
+    ts = time.time() - random.uniform(30, 120)
+    notif = _eval_notification(user, ex, ti, ts)
+    _record_user_notification(notif)
+    attempt = _build_attempt(user, ex, ts, notif, [ti], [], large=True)
+    _push_attempt(user["user_id"], attempt)
+
+
+async def _record_live_completion(user, ex, completed_indices, now):
+    """Live path: a mock action that cleared task(s). Emits the feed row FIRST (so
+    the client has rendered it), then the attempt, then notification_outcome — the
+    order the pip merge relies on."""
+    uid = user["user_id"]
+    notif = _eval_notification(user, ex, completed_indices[0], now)
+    STATE["notifications"].insert(0, notif)
+    del STATE["notifications"][30:]
+    _record_user_notification(notif)
+    await sio.emit("notification", notif)
+    attempt = _build_attempt(user, ex, now, notif, list(completed_indices), list(completed_indices))
+    _push_attempt(uid, attempt)
+    for ti in completed_indices:
+        check = next(c for c in attempt["checks"]
+                     if c["inject_uuid"] == ex["tasks"][ti]["uuid"])
+        _set_provenance(uid, ex, ti, notif, attempt, check)
+    await sio.emit("user_evaluation_recorded", {"user_id": uid, "attempt": attempt})
+    completed_tasks = [{"uuid": ex["tasks"][ti]["uuid"], "name": ex["tasks"][ti]["name"],
+                        "first_completion": _is_first_completion(uid, ex, ti)}
+                       for ti in completed_indices]
+    await sio.emit("notification_outcome", {
+        "notification_id": notif["id"], "user_id": uid, "completed_tasks": completed_tasks})
+
+
+async def _record_live_failed_check(user, ex, checked_indices, now, large=False):
+    """Live path: a mock action evaluated against available task(s) that cleared
+    nothing. No notification_outcome (the feed is completed-only)."""
+    uid = user["user_id"]
+    notif = _eval_notification(user, ex, checked_indices[0], now)
+    STATE["notifications"].insert(0, notif)
+    del STATE["notifications"][30:]
+    _record_user_notification(notif)
+    await sio.emit("notification", notif)
+    attempt = _build_attempt(user, ex, now, notif, list(checked_indices), [], large=large)
+    _push_attempt(uid, attempt)
+    await sio.emit("user_evaluation_recorded", {"user_id": uid, "attempt": attempt})
+    return attempt
+
+
+# ----------------------------------------------------------------------------
 # Emit helpers
 # ----------------------------------------------------------------------------
 async def emit_all(to=None):
@@ -505,11 +1053,25 @@ async def simulate(tick):
             done = STATE["done"][uid][ex0_uuid]
             nxt = next(ti for ti in range(n_tasks) if ti not in done)
             # occasionally a player clears everything that's left in one go
-            burst = range(nxt, n_tasks) if random.random() < 0.15 else [nxt]
+            burst = list(range(nxt, n_tasks)) if random.random() < 0.15 else [nxt]
             for ti in burst:
                 done[ti] = now
             _ignite(uid, now)
-            STATE["activity"][uid][-1] += len(list(burst))
+            STATE["activity"][uid][-1] += len(burst)
+            # Emit the clearing action's feed row + evaluation attempt + provenance
+            # + notification_outcome (lights the feed pip on the row just emitted).
+            await _record_live_completion(u, ex0, burst, now)
+            notif_this_tick += 1
+
+        # Occasionally a player acts but clears nothing → a failing "checked N"
+        # attempt (drives the drawer's failure diagnostics live). No feed pip.
+        if movers and random.random() < 0.6:
+            u = random.choice(movers)
+            avail = _available_indices(ex0, STATE["done"][u["user_id"]][ex0_uuid])
+            if avail:
+                checked = avail[:2] if (len(avail) >= 2 and random.random() < 0.4) else [avail[0]]
+                await _record_live_failed_check(u, ex0, checked, now)
+                notif_this_tick += 1
 
         # "Being validated" pulses: mirror the real backend re-checking a
         # trainee's injects after they act. Fire on a few players' next
@@ -596,6 +1158,17 @@ async def get_user_events(sid, data):
 
 
 @sio.event
+async def get_user_evaluations(sid, data):
+    """Seed the drawer's evaluation view on open — buffer A for a user (newest
+    first), mirroring get_user_events. Ungated request/ack like the other reads."""
+    try:
+        uid = int(data.get("user_id"))
+    except (TypeError, ValueError):
+        return []
+    return list(STATE["evaluations"].get(uid, []))
+
+
+@sio.event
 async def get_users_activity(sid):
     return {
         "activity": {u["user_id"]: STATE["activity"][u["user_id"]] for u in STATE["users"]},
@@ -659,12 +1232,23 @@ async def change_exercise_selection(sid, payload):
     return {"success": True}
 
 
+def _clear_evaluation_state():
+    """Drop buffer A + completion provenance for everyone — used whenever progress
+    itself is wiped, so no stale 'cleared by' lines survive a reset."""
+    for uid in STATE["evaluations"]:
+        STATE["evaluations"][uid] = []
+    for uid in STATE["provenance"]:
+        for ex_uuid in STATE["provenance"][uid]:
+            STATE["provenance"][uid][ex_uuid] = {}
+
+
 @sio.event
 async def reset_all_exercise_progress(sid):
     for uid in STATE["done"]:
         for ex_uuid in STATE["done"][uid]:
             STATE["done"][uid][ex_uuid] = {}
         STATE["fire"][uid] = None
+    _clear_evaluation_state()
     await emit_all()
     return {"success": True}
 
@@ -746,6 +1330,7 @@ async def index(request):
         "paused": STATE["paused"],
         "controls": ["POST /mock/pause", "POST /mock/resume", "POST /mock/clear",
                      "POST /mock/clear/<user_id>", "POST /mock/checking/<user_id>",
+                     "POST /mock/eval-pass/<user_id>", "POST /mock/eval-fail/<user_id>[?large=1]",
                      "POST /mock/empty", "POST /mock/reset",
                      "POST /mock/zmq-stale", "POST /mock/zmq-fresh"],
     })
@@ -807,11 +1392,74 @@ async def mock_checking_user(request):
     return web.json_response({"success": True, "checking": uid, "tasks": fired})
 
 
+def _parse_user_id(request):
+    """(uid, error_response) — shared parse/validate for the eval controls."""
+    try:
+        uid = int(request.match_info["user_id"])
+    except ValueError:
+        return None, web.json_response({"success": False, "error": "user_id must be an int"},
+                                       status=400)
+    if uid not in STATE["done"]:
+        return None, web.json_response({"success": False, "error": f"no user {uid}"}, status=404)
+    return uid, None
+
+
+def _user_by_id(uid):
+    return next(u for u in STATE["users"] if u["user_id"] == uid)
+
+
+async def mock_eval_pass(request):
+    """Clear this player's next available task via a full evaluation — produces an
+    inspectable passing attempt, stamps provenance, and lights the feed pip."""
+    uid, err = _parse_user_id(request)
+    if err:
+        return err
+    now = time.time()
+    for ex in STATE["exercises"]:
+        if ex["uuid"] not in STATE["selected"]:
+            continue
+        avail = _available_indices(ex, STATE["done"][uid][ex["uuid"]])
+        if avail:
+            ti = avail[0]
+            STATE["done"][uid][ex["uuid"]][ti] = now
+            _ignite(uid, now)
+            await _record_live_completion(_user_by_id(uid), ex, [ti], now)
+            await emit_all()
+            return web.json_response({"success": True, "user": uid,
+                                      "completed": ex["tasks"][ti]["name"]})
+    return web.json_response({"success": False, "error": "no available task to clear"},
+                             status=409)
+
+
+async def mock_eval_fail(request):
+    """Record a failing "checked, cleared nothing" attempt on this player's next
+    available task(s) — an inspectable failing trace. `?large=1` forces the
+    over-cap bounded-preview dump."""
+    uid, err = _parse_user_id(request)
+    if err:
+        return err
+    large = request.query.get("large") in ("1", "true", "yes")
+    now = time.time()
+    for ex in STATE["exercises"]:
+        if ex["uuid"] not in STATE["selected"]:
+            continue
+        avail = _available_indices(ex, STATE["done"][uid][ex["uuid"]])
+        if avail:
+            checked = avail[:2] if (len(avail) >= 2 and not large) else [avail[0]]
+            attempt = await _record_live_failed_check(_user_by_id(uid), ex, checked, now, large=large)
+            return web.json_response({"success": True, "user": uid, "attempt_id": attempt["id"],
+                                      "checked": [ex["tasks"][t]["name"] for t in checked],
+                                      "large": large})
+    return web.json_response({"success": False, "error": "no available task to check"},
+                             status=409)
+
+
 async def mock_empty(request):
     for uid in STATE["done"]:
         for ex_uuid in STATE["done"][uid]:
             STATE["done"][uid][ex_uuid] = {}
         STATE["fire"][uid] = None
+    _clear_evaluation_state()
     await emit_all()
     return web.json_response({"success": True, "board": "empty"})
 
@@ -870,6 +1518,8 @@ def main():
     app.router.add_post("/mock/clear", mock_clear_all)
     app.router.add_post("/mock/clear/{user_id}", mock_clear_user)
     app.router.add_post("/mock/checking/{user_id}", mock_checking_user)
+    app.router.add_post("/mock/eval-pass/{user_id}", mock_eval_pass)
+    app.router.add_post("/mock/eval-fail/{user_id}", mock_eval_fail)
     app.router.add_post("/mock/empty", mock_empty)
     app.router.add_post("/mock/reset", mock_reset)
     app.router.add_post("/mock/zmq-stale", mock_zmq_stale)
@@ -886,7 +1536,8 @@ def main():
           f"{', PAUSED' if STATE['paused'] else ''})")
     print("Point `npm run dev` (http://localhost:5173) at it — it already targets :4001.")
     print(f"Controls: curl -X POST http://localhost:{args.port}/mock/"
-          "{pause,resume,clear,clear/<id>,checking/<id>,empty,reset,zmq-stale,zmq-fresh}")
+          "{pause,resume,clear,clear/<id>,checking/<id>,eval-pass/<id>,"
+          "eval-fail/<id>,empty,reset,zmq-stale,zmq-fresh}")
     web.run_app(app, host=args.host, port=args.port, print=None)
 
 
