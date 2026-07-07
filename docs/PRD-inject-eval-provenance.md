@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft — awaiting Phase 0 sign-off |
+| **Status** | Phase 0 ✅ (mockup signed off 2026-07-07) — building phases 1–6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -219,7 +219,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 
 | # | Phase | Layer | Effort | Risk | Status |
 |---|---|---|---|---|---|
-| 0 | Design proposal & validation (mockup) | Design | Small | — | ☐ |
+| 0 | Design proposal & validation (mockup) | Design | Small | — | ✅ Done (05f7887) |
 | 1 | Contract + mock (synthetic attempts, provenance, outcomes) | Mock/backend | Medium | Med | ☐ |
 | 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ☐ |
 | 3 | Live Feed completion pip | Frontend | Small | Low | ☐ |
@@ -234,6 +234,14 @@ real backend's known constraints). Phase 6 is the only phase that touches the ev
 ---
 
 ### Phase 0 — Design proposal & validation
+
+**Status: ✅ Done — 05f7887.** Signed off 2026-07-07. Mockup
+`docs/mockups/inject-eval-provenance.html` renders all four surfaces + the EvaluationDebug traces
+(passing/failing `data_filtering`, `python`, synthesized `query_mirror`). Feedback applied: dropped the
+feed pip's first-blood flag; added size-aware handling for large data dumps — every dump carries a
+size/shape header, small values show in full, and anything over a configurable cap is stored as a
+**bounded preview at capture time** (so the per-user buffer never holds multi-MB events). Phases 1–6
+build against it.
 
 **Gate for everything that follows.** A self-contained dark-theme (`.sa-root`) mockup showing all
 four surfaces at realistic density: the feed completion pip; the drawer's completed-task "cleared
