@@ -843,7 +843,9 @@ async def options_handler(request):
 
 def main():
     ap = argparse.ArgumentParser(description="SkillAegis dashboard mock server")
-    ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="bind address (default 127.0.0.1; pass 0.0.0.0 to expose "
+                         "on all interfaces)")
     ap.add_argument("--port", type=int, default=4001)
     ap.add_argument("--players", type=int, default=20)
     ap.add_argument("--tick", type=float, default=2.5, help="simulation tick seconds")
