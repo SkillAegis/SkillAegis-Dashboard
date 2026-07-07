@@ -1,0 +1,898 @@
+<title>Inject-Eval Provenance — Phase 0 Mockup</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700;800&display=swap');
+</style>
+<style>
+/* ============================================================================
+   Phase 0 mockup — Inject-Evaluation Provenance & Debugging
+   (docs/PRD-inject-eval-provenance.md). Self-contained dark-theme (.sa-root)
+   render of all FOUR surfaces at realistic density, plus the shared
+   EvaluationDebug renderer with a passing + failing data_filtering trace, a
+   python trace, and a synthesized query_mirror trace. No production code —
+   this is the design phases 1–6 implement against.
+
+   Tokens, component CSS and the debug visual language are lifted verbatim from
+   the live dashboard (src/TheDahboard.vue, LiveFeed.vue, PlayerDrawer.vue) and
+   the Editor's Inject Tester (SkillAegis-Editor/src/Views/InjectTester.vue) so
+   what you sign off here is what ships.
+   ========================================================================== */
+
+/* ---- dashboard color tokens (verbatim from TheDahboard.vue) -------------- */
+.sa-root {
+  --sa-cyan-rgb: 54, 210, 255;
+  --sa-mint-rgb: 91, 227, 154;
+  --sa-gold-rgb: 255, 205, 91;
+  --sa-gold-bright-rgb: 255, 224, 138;
+  --sa-violet-rgb: 176, 139, 255;
+  --sa-danger-rgb: 255, 107, 107;
+  --sa-cyan: rgb(var(--sa-cyan-rgb));
+  --sa-mint: rgb(var(--sa-mint-rgb));
+  --sa-gold: rgb(var(--sa-gold-rgb));
+  --sa-gold-bright: rgb(var(--sa-gold-bright-rgb));
+  --sa-violet: rgb(var(--sa-violet-rgb));
+  --sa-danger: rgb(var(--sa-danger-rgb));
+  --sa-text-1: #eaf3ff;
+  --sa-text-2: #cfe3ff;
+  --sa-text-3: #9fb4d0;
+  --sa-text-4: #7e98ba;
+  --sa-text-5: #5f86b0;
+  --sa-text-6: #46607f;
+  --sa-bg-rgb: 8, 14, 24;
+  --sa-bg-base: #070b14;
+  --sa-ink: #0a1322;
+  /* six-hue debug group cycle — dark-theme equivalents of the Editor's
+     ['cyan','amber','blue','pink','violet','green'] */
+  --ed-1-rgb: 54, 210, 255;   /* cyan  */
+  --ed-2-rgb: 255, 205, 91;   /* amber */
+  --ed-3-rgb: 91, 155, 255;   /* blue  */
+  --ed-4-rgb: 255, 126, 182;  /* pink  */
+  --ed-5-rgb: 176, 139, 255;  /* violet*/
+  --ed-6-rgb: 91, 227, 154;   /* green */
+}
+
+/* ---- page shell ---------------------------------------------------------- */
+.sa-root {
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  color: #cdd9ec;
+  background:
+    radial-gradient(1200px 700px at 18% -8%, #0d2036 0%, rgba(13, 32, 54, 0) 60%),
+    radial-gradient(1100px 800px at 105% 110%, #11243b 0%, rgba(17, 36, 59, 0) 55%),
+    var(--sa-bg-base);
+  min-height: 100vh;
+  padding: 0 0 80px;
+  -webkit-font-smoothing: antialiased;
+}
+.sa-root * { box-sizing: border-box; }
+.sa-mono { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+/* ---- mockup chrome (scaffolding, not part of the product UI) ------------- */
+.mk-wrap { max-width: 1180px; margin: 0 auto; padding: 0 26px; }
+.mk-hero {
+  padding: 34px 26px 22px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.mk-hero h1 {
+  font-size: 27px; font-weight: 700; letter-spacing: .3px; margin: 0;
+  color: var(--sa-text-1);
+}
+.mk-hero .mk-sub { color: var(--sa-text-4); font-size: 13.5px; margin-top: 8px; max-width: 860px; line-height: 1.6; }
+.mk-hero .mk-tag {
+  display: inline-block; margin-bottom: 12px; font-size: 10px; font-weight: 700;
+  letter-spacing: 2px; color: var(--sa-cyan); padding: 4px 10px; border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), .1); border: 1px solid rgba(var(--sa-cyan-rgb), .25);
+}
+.mk-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 18px; }
+.mk-legend .mk-li { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--sa-text-3); }
+.mk-legend .mk-sw { width: 22px; height: 14px; border-radius: 4px; flex: none; }
+
+.mk-section { margin-top: 40px; }
+.mk-shead {
+  display: flex; align-items: baseline; gap: 12px; padding: 0 26px 12px;
+  max-width: 1180px; margin: 0 auto;
+}
+.mk-snum {
+  font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 800;
+  color: var(--sa-ink); background: var(--sa-cyan); border-radius: 6px;
+  padding: 2px 9px; flex: none; box-shadow: 0 0 14px rgba(var(--sa-cyan-rgb), .4);
+}
+.mk-stitle { font-size: 17px; font-weight: 700; color: var(--sa-text-1); }
+.mk-scap {
+  padding: 0 26px; max-width: 1180px; margin: 0 auto 16px; font-size: 12.5px;
+  color: var(--sa-text-4); line-height: 1.6;
+}
+.mk-scap b { color: var(--sa-text-2); font-weight: 600; }
+.mk-scap code {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--sa-gold-bright);
+  background: rgba(var(--sa-gold-rgb), .08); padding: 1px 5px; border-radius: 4px;
+}
+.mk-note {
+  display: inline-flex; align-items: center; gap: 6px; margin-left: 8px;
+  font-size: 10px; font-weight: 700; letter-spacing: .5px; color: var(--sa-text-5);
+}
+
+/* small callout arrow used to point at the new bits */
+.mk-flag {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-weight: 800;
+  letter-spacing: 1px; color: var(--sa-mint); padding: 2px 7px; border-radius: 5px;
+  background: rgba(var(--sa-mint-rgb), .12); border: 1px solid rgba(var(--sa-mint-rgb), .3);
+  text-transform: uppercase;
+}
+
+/* ============================================================================
+   SURFACE 1 — Live Feed completion pip  (reuses LiveFeed.vue treatment)
+   ========================================================================== */
+.sa-feed {
+  max-width: 1180px; margin: 0 auto;
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.16);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(14, 22, 38, 0.92), rgba(9, 15, 26, 0.92));
+  overflow: hidden;
+}
+.sa-feed-head {
+  display: flex; align-items: center; gap: 12px; padding: 11px 16px 9px;
+  border-bottom: 1px solid rgba(var(--sa-cyan-rgb), .1);
+}
+.sa-feed-head .ttl { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; color: var(--sa-text-2); }
+.sa-health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sa-mint); box-shadow: 0 0 8px var(--sa-mint); animation: sa-blink 1.3s infinite; }
+.sa-pill-stat { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px; }
+.sa-feed-list { padding: 8px 10px 12px; display: flex; flex-direction: column; }
+.sa-frow {
+  border-radius: 10px; margin-bottom: 6px; padding: 8px 10px;
+  background: rgba(var(--sa-bg-rgb), .45); border: 1px solid rgba(var(--sa-cyan-rgb), .09);
+}
+.sa-frow-top { display: flex; align-items: center; gap: 10px; }
+.sa-fuser { font-size: 13px; font-weight: 600; color: var(--sa-text-2); width: 82px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sa-meth { font-size: 10px; font-weight: 800; letter-spacing: .5px; padding: 3px 7px; border-radius: 5px; min-width: 46px; text-align: center; flex: none; }
+.sa-m-post { color: var(--sa-mint); background: rgba(var(--sa-mint-rgb), .14); }
+.sa-m-get { color: var(--sa-cyan); background: rgba(var(--sa-cyan-rgb), .12); }
+.sa-m-hook { color: #d9c690; background: rgba(var(--sa-violet-rgb), .16); }
+.sa-furl { font-size: 12px; color: var(--sa-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+
+/* the completion pip — the one new thing on the feed row. Completed-only. */
+.sa-pip {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  font-size: 11px; font-weight: 700; padding: 3px 9px 3px 7px; border-radius: 999px;
+  color: #d7f7e6; background: rgba(var(--sa-mint-rgb), .14);
+  border: 1px solid rgba(var(--sa-mint-rgb), .42);
+  box-shadow: 0 0 12px rgba(var(--sa-mint-rgb), .18);
+}
+.sa-pip .ck {
+  width: 15px; height: 15px; border-radius: 50%; flex: none; display: inline-flex;
+  align-items: center; justify-content: center; font-size: 10px; font-weight: 900;
+  color: var(--sa-ink); background: var(--sa-mint); box-shadow: 0 0 8px rgba(var(--sa-mint-rgb), .6);
+}
+.sa-pip .tn { color: #eafff4; }
+.sa-pip .lbl { color: #8fdcb4; font-weight: 600; }
+
+/* ============================================================================
+   SURFACE 2 + 3 — Player Drawer  (reuses PlayerDrawer.vue treatment)
+   ========================================================================== */
+.sa-drawer {
+  max-width: 1180px; margin: 0 auto;
+  display: flex; min-height: 0;
+  border-radius: 16px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(16, 25, 42, 0.985), rgba(9, 14, 25, 0.985));
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.28);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.sa-drawer-scroll { flex: 1; min-width: 0; }
+.sa-erail { flex: none; width: 400px; border-left: 1px solid rgba(var(--sa-cyan-rgb), 0.14); background: rgba(var(--sa-bg-rgb), 0.5); display: flex; flex-direction: column; }
+
+/* header */
+.sa-dhead { padding: 18px 24px 14px; }
+.sa-idrow { display: flex; align-items: center; gap: 14px; }
+.sa-rankbadge { width: 48px; height: 48px; flex: none; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 21px; font-family: 'JetBrains Mono', monospace; background: var(--sa-gold); color: var(--sa-ink); box-shadow: 0 0 20px rgba(var(--sa-gold-rgb), 0.45); }
+.sa-hash { font-size: 11px; opacity: .6; margin-right: 1px; }
+.sa-idmeta { min-width: 0; flex: 1; }
+.sa-nm { font-size: 25px; font-weight: 700; color: var(--sa-text-1); letter-spacing: .3px; }
+.sa-idorg { font-size: 11px; color: var(--sa-text-5); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+.sa-scorebox { text-align: right; flex: none; }
+.sa-sc-v { font-size: 32px; font-weight: 800; color: var(--sa-cyan); line-height: 1; font-family: 'JetBrains Mono', monospace; }
+.sa-sc-m { font-size: 14px; color: var(--sa-text-5); font-family: 'JetBrains Mono', monospace; }
+.sa-sc-lbl { font-size: 9px; letter-spacing: 1.5px; color: var(--sa-text-6); margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+
+/* section scaffold */
+.sa-sec { padding: 15px 24px; border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.09); }
+.sa-sec-h { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.sa-sec-ttl { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; color: var(--sa-text-3); }
+.sa-sec-sub { font-size: 10px; color: var(--sa-text-6); margin-left: auto; font-family: 'JetBrains Mono', monospace; }
+
+/* task rows */
+.sa-tlist { display: flex; flex-direction: column; }
+.sa-trow { display: flex; align-items: flex-start; gap: 12px; padding: 9px 8px; border-radius: 9px; }
+.sa-trow + .sa-trow { border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.055); }
+.sa-tmk { width: 22px; height: 22px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+.sa-trow-done .sa-tmk { background: linear-gradient(180deg, var(--sa-cyan), var(--sa-mint)); color: var(--sa-ink); }
+.sa-trow-now .sa-tmk { background: rgba(var(--sa-cyan-rgb), 0.14); border: 1px solid var(--sa-cyan); color: var(--sa-cyan); box-shadow: 0 0 8px rgba(var(--sa-cyan-rgb), 0.5); }
+.sa-trow-lock .sa-tmk { background: rgba(var(--sa-cyan-rgb), 0.04); border: 1px solid rgba(110, 130, 160, 0.28); color: var(--sa-text-6); }
+.sa-tn { flex: 1; min-width: 0; }
+.sa-tnm { font-size: 13.5px; color: var(--sa-text-2); }
+.sa-trow-now .sa-tnm { color: var(--sa-cyan); font-weight: 600; }
+.sa-trow-lock .sa-tnm { color: var(--sa-text-5); }
+.sa-tmeta { font-size: 10px; color: var(--sa-text-6); margin-top: 3px; display: flex; align-items: center; gap: 6px; font-family: 'JetBrains Mono', monospace; }
+.sa-fb { color: var(--sa-danger); font-weight: 800; }
+.sa-pulse { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--sa-cyan); box-shadow: 0 0 7px rgba(var(--sa-cyan-rgb), 0.8); animation: sa-blink 1.3s infinite; }
+.sa-trt { text-align: right; flex: none; }
+.sa-tat { font-size: 12px; font-weight: 700; color: var(--sa-text-2); font-family: 'JetBrains Mono', monospace; }
+.sa-gap { display: inline-block; margin-top: 3px; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px; color: var(--sa-text-4); background: rgba(var(--sa-cyan-rgb), 0.09); font-family: 'JetBrains Mono', monospace; }
+.sa-gap-now { color: var(--sa-cyan); background: rgba(var(--sa-cyan-rgb), 0.14); }
+.sa-gap-lock { color: var(--sa-text-6); background: rgba(110, 130, 160, 0.12); }
+
+/* SURFACE 2 — provenance line on a completed task ("cleared by …") */
+.sa-prov {
+  margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 10.5px; font-family: 'JetBrains Mono', monospace; color: var(--sa-text-5);
+}
+.sa-prov .lead { color: var(--sa-text-6); }
+.sa-prov .mth {
+  font-weight: 800; letter-spacing: .4px; padding: 1px 5px; border-radius: 4px;
+  color: var(--sa-mint); background: rgba(var(--sa-mint-rgb), .12);
+}
+.sa-prov .u { color: var(--sa-text-3); }
+.sa-prov .at { color: var(--sa-text-5); }
+.sa-viewbtn {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  font-size: 10.5px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+  color: var(--sa-cyan); padding: 2px 8px; border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), .09); border: 1px solid rgba(var(--sa-cyan-rgb), .28);
+  transition: background .15s, border-color .15s;
+}
+.sa-viewbtn:hover { background: rgba(var(--sa-cyan-rgb), .16); border-color: rgba(var(--sa-cyan-rgb), .5); }
+.sa-prov-blank { color: var(--sa-text-6); font-style: italic; }
+
+/* events rail (SURFACE 3) */
+.sa-erail-head { flex: none; display: flex; align-items: baseline; gap: 8px; padding: 15px 16px 12px; border-bottom: 1px solid rgba(var(--sa-cyan-rgb), 0.1); }
+.sa-erail-ttl { font-size: 11px; font-weight: 700; letter-spacing: 1.6px; color: var(--sa-text-3); }
+.sa-erail-sub { font-size: 10px; color: var(--sa-text-6); margin-left: auto; font-family: 'JetBrains Mono', monospace; }
+.sa-erail-list { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px 14px; }
+.sa-ev { border-radius: 10px; padding: 8px 11px; margin-bottom: 6px; background: rgba(var(--sa-bg-rgb), 0.5); border: 1px solid rgba(var(--sa-cyan-rgb), 0.1); }
+.sa-ev-web { border-color: rgba(var(--sa-violet-rgb), 0.28); background: rgba(var(--sa-violet-rgb), 0.05); }
+.sa-ev-top { display: flex; align-items: center; gap: 9px; }
+.sa-ev-url { flex: 1; min-width: 0; font-size: 12px; color: var(--sa-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'JetBrains Mono', monospace; }
+.sa-ev-time { font-size: 11px; font-weight: 700; color: var(--sa-text-5); flex: none; font-family: 'JetBrains Mono', monospace; }
+
+/* SURFACE 3 — the per-event outcome badge row */
+.sa-ev-out { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+.sa-badge {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 700;
+  padding: 3px 9px; border-radius: 999px; font-family: 'JetBrains Mono', monospace;
+}
+.sa-badge-done { color: #d7f7e6; background: rgba(var(--sa-mint-rgb), .13); border: 1px solid rgba(var(--sa-mint-rgb), .4); }
+.sa-badge-done .ck { width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; color: var(--sa-ink); background: var(--sa-mint); }
+.sa-badge-check { color: var(--sa-text-3); background: rgba(var(--sa-cyan-rgb), .08); border: 1px solid rgba(var(--sa-cyan-rgb), .24); cursor: pointer; }
+.sa-badge-check .chev { color: var(--sa-text-5); font-size: 9px; }
+.sa-ev-dbg {
+  margin-left: auto; cursor: pointer; font-size: 10px; font-weight: 700; font-family: 'JetBrains Mono', monospace;
+  color: var(--sa-cyan); padding: 2px 8px; border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), .09); border: 1px solid rgba(var(--sa-cyan-rgb), .26);
+}
+.sa-ev-dbg:hover { background: rgba(var(--sa-cyan-rgb), .16); }
+
+/* expanded checked-task list */
+.sa-checklist { margin-top: 8px; border-top: 1px dashed rgba(var(--sa-cyan-rgb), .14); padding-top: 7px; display: flex; flex-direction: column; gap: 6px; }
+.sa-crow { display: flex; align-items: center; gap: 8px; }
+.sa-cmark { width: 16px; height: 16px; flex: none; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 900; }
+.sa-cmark-pass { color: var(--sa-ink); background: var(--sa-mint); }
+.sa-cmark-fail { color: #ffe3e3; background: rgba(var(--sa-danger-rgb), .28); border: 1px solid rgba(var(--sa-danger-rgb), .6); }
+.sa-cn { flex: 1; min-width: 0; }
+.sa-cn .nm { font-size: 12px; color: var(--sa-text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sa-cn .rl { font-size: 10px; color: var(--sa-text-5); font-family: 'JetBrains Mono', monospace; margin-top: 1px; }
+.sa-cn .rl b { color: var(--sa-text-4); font-weight: 600; }
+.sa-cdbg { cursor: pointer; flex: none; font-size: 9.5px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--sa-cyan); padding: 2px 7px; border-radius: 5px; background: rgba(var(--sa-cyan-rgb), .08); border: 1px solid rgba(var(--sa-cyan-rgb), .24); }
+.sa-cdbg:hover { background: rgba(var(--sa-cyan-rgb), .16); }
+
+/* ============================================================================
+   SURFACE 4 — EvaluationDebug.vue  (dark port of the Editor's outcome+debug)
+   ========================================================================== */
+.ed-panel {
+  max-width: 1180px; margin: 0 auto;
+  border-radius: 16px; overflow: hidden;
+  background: linear-gradient(180deg, rgba(16, 25, 42, 0.99), rgba(9, 14, 25, 0.99));
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.28);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+}
+.ed-top { display: flex; align-items: center; gap: 12px; padding: 13px 20px; border-bottom: 1px solid rgba(var(--sa-cyan-rgb), 0.12); background: rgba(16, 25, 42, 0.6); }
+.ed-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 2px; color: var(--sa-text-5); font-family: 'JetBrains Mono', monospace; }
+.ed-eyebrow b { color: var(--sa-cyan); }
+.ed-x { margin-left: auto; width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--sa-text-4); font-size: 14px; background: rgba(var(--sa-cyan-rgb), 0.06); border: 1px solid rgba(var(--sa-cyan-rgb), 0.18); cursor: pointer; }
+
+/* the switcher tabs are mockup-only, to preview all trace kinds in one place */
+.ed-tabs { display: flex; gap: 6px; padding: 12px 20px 0; flex-wrap: wrap; }
+.ed-tab { cursor: pointer; font-size: 11px; font-weight: 700; font-family: 'JetBrains Mono', monospace; color: var(--sa-text-4); padding: 6px 12px; border-radius: 8px 8px 0 0; background: rgba(var(--sa-bg-rgb), .5); border: 1px solid rgba(var(--sa-cyan-rgb), .12); border-bottom: none; }
+.ed-tab.active { color: var(--sa-text-1); background: rgba(var(--sa-cyan-rgb), .1); border-color: rgba(var(--sa-cyan-rgb), .3); }
+.ed-tab .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+
+.ed-body { padding: 18px 22px 24px; border-top: 1px solid rgba(var(--sa-cyan-rgb), .18); }
+.ed-trace { display: none; }
+.ed-trace.active { display: block; }
+
+/* captured-context banner — what makes this a read-only "as it happened" view */
+.ed-trigger { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; padding: 10px 13px; border-radius: 10px; background: rgba(var(--sa-bg-rgb), .55); border: 1px solid rgba(var(--sa-cyan-rgb), .12); }
+.ed-trigger .mth { font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 5px; color: var(--sa-mint); background: rgba(var(--sa-mint-rgb), .14); font-family: 'JetBrains Mono', monospace; }
+.ed-trigger .u { font-size: 12px; color: var(--sa-text-2); font-family: 'JetBrains Mono', monospace; }
+.ed-trigger .meta { font-size: 10.5px; color: var(--sa-text-5); font-family: 'JetBrains Mono', monospace; }
+.ed-trigger .cap { margin-left: auto; font-size: 9.5px; font-weight: 700; letter-spacing: .5px; color: var(--sa-text-6); font-family: 'JetBrains Mono', monospace; }
+
+/* Outcome pill (mirrors the Editor's Outcome row) */
+.ed-outcome-row { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.ed-outcome-lbl { font-size: 13px; font-weight: 700; color: var(--sa-text-3); width: 74px; }
+.ed-outcome {
+  display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700;
+  padding: 6px 14px; border-radius: 10px;
+}
+.ed-outcome .ic { font-size: 14px; }
+.ed-outcome-success { color: #d7f7e6; background: rgba(var(--sa-mint-rgb), .16); border: 1px solid rgba(var(--sa-mint-rgb), .45); box-shadow: 0 0 16px rgba(var(--sa-mint-rgb), .15); }
+.ed-outcome-fail { color: #ffdede; background: rgba(var(--sa-danger-rgb), .16); border: 1px solid rgba(var(--sa-danger-rgb), .45); box-shadow: 0 0 16px rgba(var(--sa-danger-rgb), .12); }
+
+/* debug timeline */
+.ed-debug-lbl { font-size: 13px; font-weight: 700; color: var(--sa-text-3); margin-bottom: 14px; }
+.ed-group { position: relative; margin-bottom: 22px; }
+.ed-group:last-child { margin-bottom: 0; }
+.ed-step { position: relative; padding-left: 48px; }
+.ed-step + .ed-step { margin-top: 6px; }
+/* vertical connector — echoes the Editor's border-l between steps of a group */
+.ed-group .ed-conn { position: absolute; left: 15px; top: 8px; bottom: -14px; width: 2px; background: rgba(var(--sa-cyan-rgb), .18); }
+.ed-group:last-child .ed-conn { bottom: 6px; }
+.ed-num {
+  position: absolute; left: 4px; top: 2px; width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800;
+  color: var(--sa-ink); font-family: 'JetBrains Mono', monospace; z-index: 1;
+}
+.ed-primary { font-size: 13px; font-weight: 700; }
+.ed-msg { font-size: 12.5px; font-weight: 600; color: var(--sa-text-2); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ed-spill {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800;
+  padding: 2px 8px; border-radius: 999px; letter-spacing: .3px;
+}
+.ed-spill-success { color: #d7f7e6; background: rgba(var(--sa-mint-rgb), .16); border: 1px solid rgba(var(--sa-mint-rgb), .45); }
+.ed-spill-fail, .ed-spill-error { color: #ffdede; background: rgba(var(--sa-danger-rgb), .16); border: 1px solid rgba(var(--sa-danger-rgb), .45); }
+.ed-pre {
+  margin: 8px 0 0; padding: 9px 11px; border-radius: 8px; font-size: 11px; line-height: 1.55;
+  font-family: 'JetBrains Mono', monospace; color: #8fe3b6; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: rgba(var(--sa-bg-rgb), .7); border: 1px solid rgba(var(--sa-cyan-rgb), .12);
+  max-height: 190px; overflow-y: auto;
+}
+.ed-pre .pk { color: var(--sa-text-5); }
+.ed-trunc { font-size: 9.5px; color: var(--sa-text-6); font-family: 'JetBrains Mono', monospace; margin-top: 6px; }
+.ed-trunc.warn { color: var(--sa-gold); }
+.ed-trunc.warn b { color: var(--sa-gold-bright); }
+/* size & shape header above a data dump */
+.ed-meta {
+  margin: 8px 0 0; display: inline-flex; align-items: center; gap: 6px;
+  font-size: 10px; font-family: 'JetBrains Mono', monospace; color: var(--sa-text-5);
+  padding: 3px 9px; border-radius: 6px;
+  background: rgba(var(--sa-bg-rgb), .55); border: 1px solid rgba(var(--sa-cyan-rgb), .12);
+}
+.ed-meta b { color: var(--sa-text-3); font-weight: 700; }
+.ed-meta .big { color: var(--sa-gold); font-weight: 800; letter-spacing: .3px; }
+.ed-meta + .ed-pre { margin-top: 5px; }
+
+/* python Status/Exit/Duration table + STDOUT/STDERR */
+.ed-pytable { margin: 6px 0 10px; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; }
+.ed-pytable th { text-align: left; font-size: 11px; font-weight: 600; color: var(--sa-text-5); padding: 2px 14px 2px 0; }
+.ed-pytable td { text-align: right; font-size: 11px; font-weight: 700; color: var(--sa-text-2); }
+.ed-pystat-success { color: var(--sa-mint); }
+.ed-pystat-failure { color: var(--sa-danger); }
+.ed-std { margin-top: 8px; }
+.ed-std .h { font-size: 11px; font-weight: 800; letter-spacing: .5px; color: var(--sa-text-4); font-family: 'JetBrains Mono', monospace; }
+.ed-std pre {
+  margin: 4px 0 0; padding: 8px 10px; border-radius: 7px; font-size: 11px; line-height: 1.5;
+  font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; max-height: 130px; overflow-y: auto;
+  background: rgba(var(--sa-bg-rgb), .7); border: 1px solid rgba(var(--sa-cyan-rgb), .1); color: var(--sa-text-3);
+}
+.ed-std pre.err { color: #ffc9c9; border-color: rgba(var(--sa-danger-rgb), .2); }
+.ed-std pre.empty { color: var(--sa-text-6); font-style: italic; }
+
+@keyframes sa-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: rgba(var(--sa-cyan-rgb), 0.18); border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+
+<div class="sa-root">
+  <div class="mk-hero">
+    <span class="mk-tag">PHASE 0 · DESIGN PROPOSAL</span>
+    <h1>Inject-Evaluation Provenance &amp; Debugging</h1>
+    <div class="mk-sub">
+      Four surfaces that answer <b>“which action cleared this task, and why did that check fail?”</b> —
+      captured live at evaluation time and rendered in the dashboard’s dark theme. The evaluation engine
+      already produces this <code>{outcome, debug}</code> trace (it’s what the Editor’s Inject Tester shows);
+      today the live routers throw it away. This mockup is the target phases 1–6 build against; it’s not
+      production code.
+    </div>
+    <div class="mk-legend">
+      <div class="mk-li"><span class="mk-sw" style="background:rgba(91,227,154,.5);border:1px solid var(--sa-mint)"></span> completed / pass</div>
+      <div class="mk-li"><span class="mk-sw" style="background:rgba(255,107,107,.3);border:1px solid var(--sa-danger)"></span> failed check</div>
+      <div class="mk-li"><span class="mk-sw" style="background:rgba(54,210,255,.2);border:1px solid var(--sa-cyan)"></span> evaluated, cleared nothing</div>
+      <div class="mk-li"><span class="mk-sw" style="background:rgba(176,139,255,.2);border:1px solid var(--sa-violet)"></span> webhook</div>
+    </div>
+  </div>
+
+  <!-- ===================== SURFACE 1 ===================== -->
+  <div class="mk-section">
+    <div class="mk-shead"><span class="mk-snum">1</span><span class="mk-stitle">Live Feed — completion pip</span></div>
+    <div class="mk-scap">
+      A small <b>✓ + cleared-task name</b> on the feed row of an action that completed a task
+      (<code>notification_outcome</code>, merged by <code>notification_id</code>). <b>Completed-only</b>:
+      actions that were evaluated but cleared nothing, and un-evaluated traffic, stay unmarked — the feed
+      stays quiet and the diagnostics live in the drawer.
+    </div>
+    <div class="mk-wrap">
+      <div class="sa-feed">
+        <div class="sa-feed-head">
+          <span class="ttl">LIVE FEED</span>
+          <span class="sa-health-dot"></span>
+          <div style="flex:1"></div>
+          <div class="sa-pill-stat" style="background:rgba(54,210,255,.1);border:1px solid rgba(54,210,255,.2)"><span class="sa-mono" style="font-size:10px;color:var(--sa-text-4)">MESSAGES</span><span class="sa-mono" style="font-size:14px;font-weight:800;color:var(--sa-cyan)">3,481</span></div>
+          <div class="sa-pill-stat" style="background:rgba(91,227,154,.1);border:1px solid rgba(91,227,154,.2)"><span style="font-size:11px">🔒</span><span class="sa-mono" style="font-size:10px;color:var(--sa-text-4)">API</span><span class="sa-mono" style="font-size:14px;font-weight:800;color:var(--sa-mint)">1,204</span></div>
+        </div>
+        <div class="sa-feed-list">
+          <div class="sa-frow">
+            <div class="sa-frow-top">
+              <span class="sa-fuser sa-mono">recon-04</span>
+              <span class="sa-meth sa-mono sa-m-get">GET</span>
+              <span class="sa-furl sa-mono">/events/view/12</span>
+            </div>
+          </div>
+          <div class="sa-frow">
+            <div class="sa-frow-top">
+              <span class="sa-fuser sa-mono">blue-lynx</span>
+              <span class="sa-meth sa-mono sa-m-post">POST</span>
+              <span class="sa-furl sa-mono">/events/add</span>
+              <span class="sa-pip"><span class="ck">✓</span><span class="lbl">Cleared:</span><span class="tn">Create event</span></span>
+            </div>
+          </div>
+          <div class="sa-frow">
+            <div class="sa-frow-top">
+              <span class="sa-fuser sa-mono">team-viper</span>
+              <span class="sa-meth sa-mono sa-m-post">POST</span>
+              <span class="sa-furl sa-mono">/attributes/restSearch</span>
+            </div>
+          </div>
+          <div class="sa-frow">
+            <div class="sa-frow-top">
+              <span class="sa-fuser sa-mono">night-owl</span>
+              <span class="sa-meth sa-mono sa-m-post">POST</span>
+              <span class="sa-furl sa-mono">/objects/add/48</span>
+              <span class="sa-pip"><span class="ck">✓</span><span class="lbl">Cleared:</span><span class="tn">Add network indicator</span></span>
+            </div>
+          </div>
+          <div class="sa-frow">
+            <div class="sa-frow-top">
+              <span class="sa-fuser sa-mono">blue-lynx</span>
+              <span class="sa-meth sa-mono sa-m-post">POST</span>
+              <span class="sa-furl sa-mono">/tags/attachTag</span>
+              <span class="mk-note" title="Evaluated against 2 available tasks; neither completed → no pip">▹ evaluated · cleared nothing · no pip</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SURFACE 2 + 3 (drawer) ===================== -->
+  <div class="mk-section">
+    <div class="mk-shead"><span class="mk-snum">2·3</span><span class="mk-stitle">Player drawer — completed-task provenance &amp; event-history outcomes</span></div>
+    <div class="mk-scap">
+      <b>Left (surface 2):</b> each done task gains a <code>cleared by &lt;method&gt; &lt;url&gt; @ &lt;time&gt;</code>
+      line and a <b>View evaluation</b> control — sourced from durable provenance on the completion record, so it
+      survives after the attempt buffer rolls over.
+      <b>Right (surface 3):</b> each event row gets an outcome badge — <b>✓ completed &lt;task&gt;</b>, or
+      <b>checked N task(s)</b> when evaluated but cleared nothing; expand a “checked” row to see each task’s
+      pass/fail + inject <code>result</code> label with a <b>Debug</b> control. Un-evaluated reads carry no badge.
+    </div>
+    <div class="mk-wrap">
+      <div class="sa-drawer">
+        <!-- main scroll column -->
+        <div class="sa-drawer-scroll">
+          <div class="sa-dhead">
+            <div class="sa-idrow">
+              <div class="sa-rankbadge sa-mono"><span class="sa-hash">#</span>2</div>
+              <div class="sa-idmeta">
+                <div class="sa-nm">blue-lynx</div>
+                <div class="sa-idorg sa-mono">CIRCL · blue-cell</div>
+              </div>
+              <div class="sa-scorebox">
+                <div><span class="sa-sc-v sa-mono">40</span><span class="sa-sc-m sa-mono"> / 90</span></div>
+                <div class="sa-sc-lbl sa-mono">SCORE</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="sa-sec">
+            <div class="sa-sec-h">
+              <span class="sa-sec-ttl">TASK TIMING</span>
+              <span class="sa-sec-sub sa-mono">time per task · gap to previous</span>
+            </div>
+            <div class="sa-tlist">
+              <!-- done + provenance -->
+              <div class="sa-trow sa-trow-done">
+                <div class="sa-tmk sa-mono">1</div>
+                <div class="sa-tn">
+                  <div class="sa-tnm">Create event</div>
+                  <div class="sa-prov">
+                    <span class="lead">cleared by</span>
+                    <span class="mth">POST</span><span class="u">/events/add</span>
+                    <span class="at">@ 14:31:58</span>
+                    <span class="sa-viewbtn" data-open="pass">▸ View evaluation</span>
+                  </div>
+                </div>
+                <div class="sa-trt"><div class="sa-tat sa-mono">14:31:58</div><span class="sa-gap sa-mono">+1m 12s</span></div>
+              </div>
+              <!-- done + provenance + first blood -->
+              <div class="sa-trow sa-trow-done">
+                <div class="sa-tmk sa-mono">2</div>
+                <div class="sa-tn">
+                  <div class="sa-tnm">Add network indicator</div>
+                  <div class="sa-tmeta sa-mono"><span class="sa-fb">🩸 first blood</span></div>
+                  <div class="sa-prov">
+                    <span class="lead">cleared by</span>
+                    <span class="mth">POST</span><span class="u">/objects/add/48</span>
+                    <span class="at">@ 14:33:12</span>
+                    <span class="sa-viewbtn" data-open="pass">▸ View evaluation</span>
+                  </div>
+                </div>
+                <div class="sa-trt"><div class="sa-tat sa-mono">14:33:12</div><span class="sa-gap sa-mono">+1m 14s</span></div>
+              </div>
+              <!-- current task -->
+              <div class="sa-trow sa-trow-now">
+                <div class="sa-tmk sa-mono">3</div>
+                <div class="sa-tn">
+                  <div class="sa-tnm">Tag event TLP:RED</div>
+                  <div class="sa-tmeta sa-mono"><span class="sa-pulse"></span>current task · started 47s ago</div>
+                </div>
+                <div class="sa-trt"><span class="sa-gap sa-gap-now sa-mono">on now</span></div>
+              </div>
+              <!-- locked -->
+              <div class="sa-trow sa-trow-lock">
+                <div class="sa-tmk sa-mono">4</div>
+                <div class="sa-tn">
+                  <div class="sa-tnm">Add threat-actor galaxy</div>
+                  <div class="sa-tmeta sa-mono">requires task 3</div>
+                </div>
+                <div class="sa-trt"><div class="sa-tat sa-mono">—</div><span class="sa-gap sa-gap-lock sa-mono">🔒</span></div>
+              </div>
+            </div>
+            <div class="mk-scap" style="padding:12px 0 0;margin:0;font-size:11px;">
+              <span class="mk-flag">note</span> After a restore-from-backup the provenance is absent (memory-only) — the line then reads
+              <span class="sa-prov" style="display:inline-flex;margin:0"><span class="sa-prov-blank">cleared by — (provenance not retained)</span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- events rail -->
+        <div class="sa-erail">
+          <div class="sa-erail-head">
+            <span class="sa-erail-ttl">RECENT EVENTS</span>
+            <span class="sa-erail-sub sa-mono">6 shown · newest first</span>
+          </div>
+          <div class="sa-erail-list">
+            <!-- checked N, cleared nothing (expanded) -->
+            <div class="sa-ev">
+              <div class="sa-ev-top">
+                <span class="sa-meth sa-mono sa-m-post">POST</span>
+                <span class="sa-ev-url sa-mono">/tags/attachTag</span>
+                <span class="sa-ev-time sa-mono">14:34:40</span>
+              </div>
+              <div class="sa-ev-out">
+                <span class="sa-badge sa-badge-check"><span class="chev">▾</span> checked 2 tasks</span>
+              </div>
+              <div class="sa-checklist">
+                <div class="sa-crow">
+                  <span class="sa-cmark sa-cmark-fail">✕</span>
+                  <div class="sa-cn"><div class="nm">Tag event TLP:RED</div><div class="rl">result: <b>Event tagged tlp:red</b> · AND</div></div>
+                  <span class="sa-cdbg" data-open="fail">Debug</span>
+                </div>
+                <div class="sa-crow">
+                  <span class="sa-cmark sa-cmark-fail">✕</span>
+                  <div class="sa-cn"><div class="nm">Add threat-actor galaxy</div><div class="rl">result: <b>Galaxy cluster attached</b> · OR</div></div>
+                  <span class="sa-cdbg" data-open="fail">Debug</span>
+                </div>
+              </div>
+            </div>
+            <!-- completed -->
+            <div class="sa-ev">
+              <div class="sa-ev-top">
+                <span class="sa-meth sa-mono sa-m-post">POST</span>
+                <span class="sa-ev-url sa-mono">/objects/add/48</span>
+                <span class="sa-ev-time sa-mono">14:33:12</span>
+              </div>
+              <div class="sa-ev-out">
+                <span class="sa-badge sa-badge-done"><span class="ck">✓</span> completed Add network indicator</span>
+                <span class="sa-ev-dbg" data-open="pass">Debug</span>
+              </div>
+            </div>
+            <!-- un-evaluated read: no badge -->
+            <div class="sa-ev">
+              <div class="sa-ev-top">
+                <span class="sa-meth sa-mono sa-m-get">GET</span>
+                <span class="sa-ev-url sa-mono">/events/view/12</span>
+                <span class="sa-ev-time sa-mono">14:32:31</span>
+              </div>
+            </div>
+            <!-- completed -->
+            <div class="sa-ev">
+              <div class="sa-ev-top">
+                <span class="sa-meth sa-mono sa-m-post">POST</span>
+                <span class="sa-ev-url sa-mono">/events/add</span>
+                <span class="sa-ev-time sa-mono">14:31:58</span>
+              </div>
+              <div class="sa-ev-out">
+                <span class="sa-badge sa-badge-done"><span class="ck">✓</span> completed Create event</span>
+                <span class="sa-ev-dbg" data-open="pass">Debug</span>
+              </div>
+            </div>
+            <!-- webhook, checked -->
+            <div class="sa-ev sa-ev-web">
+              <div class="sa-ev-top">
+                <span class="sa-meth sa-mono sa-m-hook">HOOK</span>
+                <span class="sa-ev-url sa-mono">/hook/enrichment</span>
+                <span class="sa-ev-time sa-mono">14:30:05</span>
+              </div>
+              <div class="sa-ev-out">
+                <span class="sa-badge sa-badge-check"><span class="chev">▸</span> checked 1 task</span>
+                <span class="sa-ev-dbg" data-open="python">Debug</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== SURFACE 4 (EvaluationDebug) ===================== -->
+  <div class="mk-section" id="surface4">
+    <div class="mk-shead"><span class="mk-snum">4</span><span class="mk-stitle">EvaluationDebug — the debugging tool</span></div>
+    <div class="mk-scap">
+      A shared, <b>read-only</b> renderer of a captured attempt’s <code>{outcome, debug}</code>, styled like the
+      Editor’s Inject Tester: an <b>Outcome</b> pill, then a numbered colour-grouped step timeline (one group per
+      evaluation parameter) with per-step <b>success/fail/error</b> pills, extracted-data dumps, and — for python —
+      a Status/Exit/Duration table + STDOUT/STDERR. It shows the trace <b>as captured at the moment of the action</b>,
+      deliberately not re-run. Opens as an overlay from any <b>View evaluation</b> / <b>Debug</b> control above.
+      Every data dump carries a <b>size &amp; shape header</b> — small values show in full, while anything
+      over a (configurable) size cap is stored as a <b>bounded preview at capture time</b>, since MISP events
+      run to several MB. That keeps the per-user buffer small and the view fast.
+      <span class="mk-note">(tabs below are mockup-only, to preview every trace kind)</span>
+    </div>
+    <div class="mk-wrap">
+      <div class="ed-panel">
+        <div class="ed-top">
+          <span class="ed-eyebrow"><b>◧</b> EVALUATION · CAPTURED ATTEMPT</span>
+          <span class="ed-x">✕</span>
+        </div>
+        <div class="ed-tabs">
+          <span class="ed-tab active" data-tab="pass"><span class="dot" style="background:var(--sa-mint)"></span>Passing · data_filtering</span>
+          <span class="ed-tab" data-tab="fail"><span class="dot" style="background:var(--sa-danger)"></span>Failing · data_filtering</span>
+          <span class="ed-tab" data-tab="python"><span class="dot" style="background:var(--sa-cyan)"></span>python</span>
+          <span class="ed-tab" data-tab="mirror"><span class="dot" style="background:var(--sa-violet)"></span>query_mirror</span>
+          <span class="ed-tab" data-tab="large"><span class="dot" style="background:var(--sa-gold)"></span>Large dump</span>
+        </div>
+        <div class="ed-body">
+
+          <!-- ---------- PASSING data_filtering ---------- -->
+          <div class="ed-trace active" data-trace="pass">
+            <div class="ed-trigger">
+              <span class="mth">POST</span><span class="u">/events/add</span>
+              <span class="meta">· 14:31:58 · MISP · “Create event”</span>
+              <span class="cap">READ-ONLY · AS CAPTURED</span>
+            </div>
+            <div class="ed-outcome-row">
+              <span class="ed-outcome-lbl">Outcome</span>
+              <span class="ed-outcome ed-outcome-success"><span class="ic">✓</span> Successful</span>
+            </div>
+            <div class="ed-debug-lbl">Debug</div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-1-rgb));box-shadow:0 0 12px rgba(var(--ed-1-rgb),.5)">1</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-1-rgb))">Testing <span class="sa-mono">`.Event.Attribute[] | select(.type == "ip-dst").value`</span></div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg"><span class="ed-spill ed-spill-success">✓ Success</span> Condition satisfied</div>
+              </div>
+            </div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-2-rgb));box-shadow:0 0 12px rgba(var(--ed-2-rgb),.5)">2</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-2-rgb))">Testing <span class="sa-mono">`.Event.Attribute[] | select(.type == "ip-dst").value | length`</span></div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg"><span class="ed-spill ed-spill-success">✓ Success</span> Condition satisfied</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---------- FAILING data_filtering ---------- -->
+          <div class="ed-trace" data-trace="fail">
+            <div class="ed-trigger">
+              <span class="mth">POST</span><span class="u">/tags/attachTag</span>
+              <span class="meta">· 14:34:40 · MISP · “Tag event TLP:RED”</span>
+              <span class="cap">READ-ONLY · AS CAPTURED</span>
+            </div>
+            <div class="ed-outcome-row">
+              <span class="ed-outcome-lbl">Outcome</span>
+              <span class="ed-outcome ed-outcome-fail"><span class="ic">⚠</span> Failed</span>
+            </div>
+            <div class="ed-debug-lbl">Debug</div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-1-rgb));box-shadow:0 0 12px rgba(var(--ed-1-rgb),.5)">1</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-1-rgb))">Testing <span class="sa-mono">`.Event.Tag[].name`</span></div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg"><span class="ed-spill ed-spill-fail">⚠ Fail</span> Condition not satisfied</div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg" style="color:var(--sa-text-4);font-weight:500">The provided path extracted the following data to validate</div>
+                <div class="ed-meta">↳ 76 B · array · 3 items — <b>shown in full</b></div>
+                <pre class="ed-pre">[
+  "tlp:white",
+  "misp-galaxy:sector=\"IT\"",
+  "workflow:state=\"draft\""
+]</pre>
+                <div class="ed-trunc">expected one of: <span class="sa-mono">["tlp:red"]</span> · comparison: <span class="sa-mono">contains</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---------- python ---------- -->
+          <div class="ed-trace" data-trace="python">
+            <div class="ed-trigger">
+              <span class="mth" style="color:#d9c690;background:rgba(176,139,255,.16)">HOOK</span><span class="u">/hook/enrichment</span>
+              <span class="meta">· 14:30:05 · webhook · “Enrich &amp; sight indicators”</span>
+              <span class="cap">READ-ONLY · AS CAPTURED</span>
+            </div>
+            <div class="ed-outcome-row">
+              <span class="ed-outcome-lbl">Outcome</span>
+              <span class="ed-outcome ed-outcome-success"><span class="ic">✓</span> Successful</span>
+            </div>
+            <div class="ed-debug-lbl">Debug</div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-1-rgb));box-shadow:0 0 12px rgba(var(--ed-1-rgb),.5)">1</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-1-rgb))">Run python evaluation</div>
+                <table class="ed-pytable">
+                  <tbody>
+                    <tr><th>Status:</th><td class="ed-pystat-success">success</td></tr>
+                    <tr><th>Exit code:</th><td>0</td></tr>
+                    <tr><th>Duration:</th><td>0.38s</td></tr>
+                  </tbody>
+                </table>
+                <div class="ed-std">
+                  <span class="h">STDOUT:</span>
+                  <pre>checking sightings for 3 indicators…
+  185.99.132.4      → 2 sightings ✓
+  evil-phish.example → 1 sighting  ✓
+  a1b2c3…f9         → 1 sighting  ✓
+all indicators sighted — returning True</pre>
+                </div>
+                <div class="ed-std">
+                  <span class="h">STDERR:</span>
+                  <pre class="err">/sandbox/eval.py:14: DeprecationWarning: use Sighting.list() instead of legacy fetch</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---------- query_mirror (synthesized) ---------- -->
+          <div class="ed-trace" data-trace="mirror">
+            <div class="ed-trigger">
+              <span class="mth">GET</span><span class="u">/attributes/restSearch</span>
+              <span class="meta">· 14:29:10 · MISP · “Query indicators”</span>
+              <span class="cap">READ-ONLY · AS CAPTURED</span>
+            </div>
+            <div class="ed-outcome-row">
+              <span class="ed-outcome-lbl">Outcome</span>
+              <span class="ed-outcome ed-outcome-fail"><span class="ic">⚠</span> Failed</span>
+            </div>
+            <div class="ed-debug-lbl">Debug <span class="mk-note">· synthesized — <code>query_mirror</code> is a pure equality check with no native trace</span></div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-1-rgb));box-shadow:0 0 12px rgba(var(--ed-1-rgb),.5)">1</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-1-rgb))">Comparing query result against expected</div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg"><span class="ed-spill ed-spill-fail">⚠ Fail</span> Query result does not match expected</div>
+                <pre class="ed-pre"><span class="pk">expected:</span> { "response": [ { "Attribute": { "type": "ip-dst", "value": "185.99.132.4" } } ] }
+<span class="pk">actual:  </span> { "response": [] }</pre>
+              </div>
+            </div>
+          </div>
+
+          <!-- ---------- large dump handling ---------- -->
+          <div class="ed-trace" data-trace="large">
+            <div class="ed-trigger">
+              <span class="mth">POST</span><span class="u">/events/add</span>
+              <span class="meta">· 14:36:22 · MISP · “Import incident bundle”</span>
+              <span class="cap">READ-ONLY · AS CAPTURED</span>
+            </div>
+            <div class="ed-outcome-row">
+              <span class="ed-outcome-lbl">Outcome</span>
+              <span class="ed-outcome ed-outcome-fail"><span class="ic">⚠</span> Failed</span>
+            </div>
+            <div class="ed-debug-lbl">Debug <span class="mk-note">· how a multi-MB dump renders — size/shape header + bounded preview</span></div>
+
+            <div class="ed-group">
+              <div class="ed-conn"></div>
+              <div class="ed-step">
+                <span class="ed-num" style="background:rgb(var(--ed-1-rgb));box-shadow:0 0 12px rgba(var(--ed-1-rgb),.5)">1</span>
+                <div class="ed-primary" style="color:rgb(var(--ed-1-rgb))">Testing <span class="sa-mono">`.Event.Object[].Attribute[] | select(.type == "ip-dst").value`</span></div>
+              </div>
+              <div class="ed-step">
+                <div class="ed-msg"><span class="ed-spill ed-spill-error">ⓘ Error</span> The provided path could not extract data</div>
+                <div class="ed-meta">↳ <span class="big">2.4 MB</span> · object · <b>1,284 attributes · 96 objects</b> — over cap, previewed</div>
+                <pre class="ed-pre">{
+  "Event": {
+    "uuid": "6f1e2c9a-4b7d-4e02-9f1a-2c8e5b0a11c3",
+    "info": "Imported incident bundle — APT phishing wave",
+    "date": "2026-07-07",
+    "threat_level_id": "2",
+    "analysis": "1",
+    "Attribute": [
+      { "type": "ip-dst",  "category": "Network activity", "value": "185.99.132.4",      "to_ids": true },
+      { "type": "domain",  "category": "Network activity", "value": "evil-phish.example", "to_ids": true },
+      { "type": "sha256",  "category": "Payload delivery", "value": "a1b2c3d4e5f6…7788", "to_ids": true },
+      { "type": "url",     "category": "Network activity", "value": "http://evil-phish…", "to_ids": true },</pre>
+                <div class="ed-trunc warn">▤ showing first 16 KB of <b>2.4 MB</b> · remainder truncated at capture (buffer is memory-bounded — the full event is not retained)</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mk-hero" style="padding-top:44px">
+    <div class="mk-scap" style="padding:0;margin:0">
+      <span class="mk-flag">acceptance</span>
+      Sign-off is on the four surfaces’ look — especially the Debug timeline’s fidelity to the Editor’s Inject
+      Tester (Outcome pill + numbered colour-grouped timeline, per-step pills, extracted-data dumps, python
+      Status/Exit/Duration/STDOUT/STDERR). Tell me what to adjust and I’ll iterate before any code is written.
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var root = document.currentScript.parentElement;
+  var tabs = root.querySelectorAll('.ed-tab');
+  var traces = root.querySelectorAll('.ed-trace');
+  function show(name) {
+    tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-tab') === name); });
+    traces.forEach(function (tr) { tr.classList.toggle('active', tr.getAttribute('data-trace') === name); });
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.getAttribute('data-tab')); }); });
+
+  // "View evaluation" / "Debug" controls jump to surface 4 and select the trace
+  root.querySelectorAll('[data-open]').forEach(function (btn) {
+    btn.style.cursor = 'pointer';
+    btn.addEventListener('click', function () {
+      show(btn.getAttribute('data-open'));
+      document.getElementById('surface4').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  // toggle the expanded checked-task list on the "checked N" badge
+  root.querySelectorAll('.sa-badge-check').forEach(function (b) {
+    var list = b.closest('.sa-ev').querySelector('.sa-checklist');
+    if (!list) return;
+    b.addEventListener('click', function () {
+      var open = list.style.display !== 'none';
+      list.style.display = open ? 'none' : 'flex';
+      b.querySelector('.chev').textContent = open ? '▸' : '▾';
+    });
+  });
+  // start the webhook "checked 1 task" row collapsed (it has no list here)
+})();
+</script>
