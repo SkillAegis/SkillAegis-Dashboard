@@ -160,8 +160,42 @@ async def auth_middleware(request, handler):
 
     return await handler(request)
 
+
+# Security response headers for the production dashboard, which this server serves
+# from WEB_DIST_DIR. The dev flow is unaffected: under `npm run dev` the document is
+# served by Vite (:5173), so its headers come from Vite, not from here.
+# CSP notes:
+# - style-src allows 'unsafe-inline' because Vue injects component <style> blocks and
+#   :style bindings at runtime, which a nonce cannot cover.
+# - font-src 'self' assumes the fonts are self-hosted (no Google Fonts CDN link in
+#   index.html); see the companion fonts fix.
+# - connect-src 'self' covers the same-origin Socket.IO transports (HTTP polling +
+#   WebSocket) in a production build, where the client uses a relative URL.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+))
+
+
+@web.middleware
+async def security_headers_middleware(request, handler):
+    response = await handler(request)
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
+
 app.middlewares.append(cors_middleware)
 app.middlewares.append(auth_middleware)
+app.middlewares.append(security_headers_middleware)
 
 
 async def is_authenticated(sid) -> tuple:
