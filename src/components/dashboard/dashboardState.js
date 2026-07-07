@@ -238,11 +238,15 @@ function taskRequirementMet(tasksCompletion, task) {
 /* ------------------------------------------------------------------ */
 const prevScores = {}
 const prevDone = {}
-const gains = reactive({})
+// Keyed by String(user_id) via a Map so a backend-supplied id like "__proto__"
+// or "constructor" is stored as data, not as a mutation of the container's
+// prototype (a plain object would let such ids poison the map). Vue 3
+// reactive() tracks Map operations, so reads via the view-models stay live.
+const gains = reactive(new Map())
 // Set the instant a user's completed-task count reaches the full set, used to
 // fire the one-shot all-clear burst. Only the live transition triggers it — a
 // page reload onto an already-complete board stays calm (prevDone is unseeded).
-const completions = reactive({})
+const completions = reactive(new Map())
 
 // `state.progresses` is reassigned wholesale on every update, so its identity
 // already changes each time — a shallow (identity) watch fires reliably and
@@ -260,7 +264,7 @@ watch(
       const score = exProgress.score ?? 0
       const prevScore = prevScores[key]
       if (prevScore !== undefined && score > prevScore) {
-        gains[p.user_id] = { gain: score - prevScore, at: Date.now() }
+        gains.set(String(p.user_id), { gain: score - prevScore, at: Date.now() })
       }
       prevScores[key] = score
 
@@ -269,7 +273,7 @@ watch(
       ).length
       const prevD = prevDone[key]
       if (prevD !== undefined && tasksLen > 0 && prevD < tasksLen && done >= tasksLen) {
-        completions[p.user_id] = { at: Date.now() }
+        completions.set(String(p.user_id), { at: Date.now() })
       }
       prevDone[key] = done
     }
@@ -420,9 +424,9 @@ export const players = computed(() => {
           )
         : 0
 
-    const g = gains[r.id]
+    const g = gains.get(String(r.id))
     const justScored = !!g && nowMs - g.at < JUST_SCORED_MS
-    const cmp = completions[r.id]
+    const cmp = completions.get(String(r.id))
     const justCompleted = !!cmp && nowMs - cmp.at < BURST_MS
 
     const done100 = r.done100

@@ -26,6 +26,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
+  clearTimeout(userTimer)
+  clearTimeout(urlTimer)
 })
 
 // Per-row payload expand state, keyed by stable feed id so a row stays expanded
@@ -36,6 +38,27 @@ function toggleRow(id) {
   if (expandedRows.has(id)) expandedRows.delete(id)
   else expandedRows.add(id)
 }
+
+// Debounce the feed searches: inputs bind to these local refs (instant echo);
+// the shared searchUser/searchUrl the heavy `feed` computed reads update ~200ms
+// after the last keystroke, so it doesn't recompute on every character.
+const SEARCH_DEBOUNCE_MS = 200
+const searchUserInput = ref(searchUser.value)
+const searchUrlInput = ref(searchUrl.value)
+let userTimer = null
+let urlTimer = null
+watch(searchUserInput, (v) => {
+  clearTimeout(userTimer)
+  userTimer = setTimeout(() => {
+    searchUser.value = v
+  }, SEARCH_DEBOUNCE_MS)
+})
+watch(searchUrlInput, (v) => {
+  clearTimeout(urlTimer)
+  urlTimer = setTimeout(() => {
+    searchUrl.value = v
+  }, SEARCH_DEBOUNCE_MS)
+})
 
 // Animate the activity timeline as a horizontal slide rather than per-bar height
 // growth. Each update shifts the series one bucket left, so we render the new
@@ -178,11 +201,11 @@ watch(
     <div style="display:flex;gap:10px;padding:9px 16px;">
       <div style="flex:1;display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;background:rgba(var(--sa-bg-rgb),.7);border:1px solid rgba(var(--sa-cyan-rgb),.16);">
         <span style="font-size:12px;color:var(--sa-text-6);">⌕</span>
-        <input v-model="searchUser" placeholder="Find user" class="sa-input" />
+        <input v-model="searchUserInput" placeholder="Find user" class="sa-input" />
       </div>
       <div style="flex:1.4;display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;background:rgba(var(--sa-bg-rgb),.7);border:1px solid rgba(var(--sa-cyan-rgb),.16);">
         <span style="font-size:12px;color:var(--sa-text-6);">⌕</span>
-        <input v-model="searchUrl" placeholder="Find URL or payload" class="sa-input" />
+        <input v-model="searchUrlInput" placeholder="Find URL or payload" class="sa-input" />
       </div>
     </div>
 
