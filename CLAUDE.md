@@ -57,6 +57,9 @@ server, but with synthetic, animated data so the board is alive the moment you l
   tasks in the `update_progress` snapshot, and stores over-cap data dumps as a bounded preview *at
   capture time* (size/shape `data_meta` header + a "truncated at capture" note). A deterministic
   minority of seeded completions are left provenance-less to exercise the post-restore
-  "cleared by — (provenance not retained)" path.
+  "cleared by — (provenance not retained)" path. Because the Live Feed completion pip (surface 1) is
+  otherwise a *live* augmentation (invisible until a completion fires), the mock also seeds **one**
+  real completion as a top-of-feed row already carrying `completed_tasks`, so the pip is inspectable
+  on first load like the drawer surfaces — fire `eval-pass/<id>` for more, live.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
   real backend (`--zmq_log_file` replays a recorded session). See `docs/archive/PRD-ui-testing.md`.

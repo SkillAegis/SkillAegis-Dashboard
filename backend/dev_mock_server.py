@@ -254,6 +254,11 @@ def build_world(n_players):
         _seed_user_evaluations(u)
     _seed_large_dump_attempt(STATE["users"][0], STATE["exercises"][0])
 
+    # Surface one completion pip on the Live Feed at first paint (see the helper —
+    # the pip is otherwise live-only, invisible until a completion fires). Last, so
+    # the reproducible seed sequence above and buffer A stay byte-identical.
+    _seed_feed_completion_pip()
+
 
 def _ignite(uid, last_completion):
     STATE["fire"][uid] = {"start": last_completion - 30, "until": last_completion + 100}
@@ -966,6 +971,42 @@ def _seed_large_dump_attempt(user, ex):
     _record_user_notification(notif)
     attempt = _build_attempt(user, ex, ts, notif, [ti], [], large=True)
     _push_attempt(user["user_id"], attempt)
+
+
+def _seed_feed_completion_pip():
+    """Demo affordance: surface ONE completion pip on the Live Feed at first paint.
+
+    Surface 1's pip is normally a *live* augmentation — `notification_outcome`
+    merges `completed_tasks` onto a feed row as the completion happens, so a fresh
+    load / reload shows only raw notifications and no pip (the durable record lives
+    in the drawer, surfaces 2-3). That leaves surface 1 invisible until a live
+    completion fires (the sim, or POST /mock/eval-pass/<id>) — unlike the drawer
+    surfaces, which are already seeded to inspect on load. Seed the most recent real
+    completion as a top-of-feed row already carrying `completed_tasks` so the pip is
+    visible immediately.
+
+    Called last in build_world so the reproducible seed sequence above is unchanged;
+    no attempt is pushed to buffer A, so the evaluation history stays byte-identical.
+    """
+    selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
+    if not selected:
+        return
+    ex = selected[0]
+    # First user with a completed task in this exercise; use their latest completion.
+    for u in STATE["users"]:
+        done = STATE["done"][u["user_id"]][ex["uuid"]]
+        if not done:
+            continue
+        ti = max(done.items(), key=lambda kv: kv[1])[0]
+        notif = _eval_notification(u, ex, ti, done[ti])
+        notif["completed_tasks"] = [{
+            "uuid": ex["tasks"][ti]["uuid"],
+            "name": ex["tasks"][ti]["name"],
+            "first_completion": _is_first_completion(u["user_id"], ex, ti),
+        }]
+        STATE["notifications"].insert(0, notif)
+        _record_user_notification(notif)
+        return
 
 
 async def _record_live_completion(user, ex, completed_indices, now):
