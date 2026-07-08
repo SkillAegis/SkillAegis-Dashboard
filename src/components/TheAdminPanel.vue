@@ -5,19 +5,28 @@ import {
   faGraduationCap,
   faScrewdriverWrench,
   faSuitcaseMedical,
+  faRightFromBracket,
 } from '@fortawesome/free-solid-svg-icons'
 
 import Exercises from '@/components/adminPanel/Exercises.vue'
 import ToolsDiagnostic from '@/components/adminPanel/ToolsDiagnostic.vue'
 import ControlButtons from '@/components/adminPanel/ControlButtons.vue'
-import { checkUserAuthenticated, userAuthenticated } from '@/socket'
+import { checkUserAuthenticated, userAuthenticated, logout } from '@/socket'
 import LoginForm from '@/components/adminPanel/LoginForm.vue'
+import { adminPanelOpen } from '@/settings.js'
+import { toast } from '@/utils'
 
 let authChecher = null
 const activeTab = ref('control-panel')
-const showModal = ref(false)
-function showTheModal() {
-  showModal.value = true
+
+async function handleLogout() {
+  const result = await logout()
+  checkUserAuthenticated()
+  toast({
+    variant: result.success ? 'success' : 'danger',
+    message: result.message,
+    title: 'Logout'
+  })
 }
 
 onMounted(() => {
@@ -34,17 +43,8 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <span class="group relative inline-block min-w-6 min-h-6">
-      <span className="absolute top-1 right-1 leading-3 opacity-100 group-hover:opacity-0 transition-opacity text-slate-400/70 -z-10">
-        <FontAwesomeIcon :icon="faScrewdriverWrench" size="xs"></FontAwesomeIcon>
-      </span>
-      <button @click="showTheModal()" class="group-hover:block hidden btn btn-info mt-1 mr-1">
-        <FontAwesomeIcon :icon="faScrewdriverWrench" class="mr-1"></FontAwesomeIcon>
-        Admin panel
-      </button>
-    </span>
-
-    <Modal :showModal="showModal" @modal-close="showModal = false">
+    <!-- Opened from the dashboard header gear icon (settings.js: adminPanelOpen) -->
+    <Modal :showModal="adminPanelOpen" @modal-close="adminPanelOpen = false">
       <template #header>
         <h2 class="text-2xl font-bold">
           <FontAwesomeIcon :icon="faScrewdriverWrench" class=""></FontAwesomeIcon>
@@ -84,6 +84,13 @@ onUnmounted(() => {
                 >
                   <FontAwesomeIcon :icon="faSuitcaseMedical" fixed-size class="mr-2"></FontAwesomeIcon>
                   <span>Diagnostic</span>
+                </button>
+                <button
+                  @click="handleLogout"
+                  class="text-start btn btn-lg !px-5 !py-3 mt-auto !bg-red-100 !text-red-800 !border-red-300 hover:!bg-red-200"
+                >
+                  <FontAwesomeIcon :icon="faRightFromBracket" fixed-size class="mr-2"></FontAwesomeIcon>
+                  <span>Log out</span>
                 </button>
             </div>
             <div class="p-4 grow">

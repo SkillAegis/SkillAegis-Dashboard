@@ -7,7 +7,7 @@
         resetLiveLogs,
         reloadFromDisk
     } from '@/socket'
-    import TheThemeButton from '@/components/TheThemeButton.vue'
+    import { reduceMotionOn } from '@/settings.js'
 </script>
 
 <template>
@@ -15,9 +15,11 @@
         <table class="">
             <tr class="">
                 <td>
-                    <TheThemeButton></TheThemeButton>
+                    <label class="grid cursor-pointer place-items-center">
+                        <input type="checkbox" v-model="reduceMotionOn" class="toggle toggle-info" />
+                    </label>
                 </td>
-                <td class="text-lg">Switch between Dark/Light theme</td>
+                <td class="text-lg">Reduce motion — calm animations for projection &amp; accessibility</td>
             </tr>
             <tr class="">
                 <td>

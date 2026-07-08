@@ -4,13 +4,13 @@ import { faCircleNotch } from '@fortawesome/free-solid-svg-icons'
 import { login } from '@/socket'
 import { toast } from '@/utils'
 
-const username = ref('')
+const email = ref('')
 const password = ref('')
 const loginInProgress = ref(false)
 
 async function handleSubmit() {
   loginInProgress.value = true
-  const payload = { username: username.value, password: password.value }
+  const payload = { username: email.value, password: password.value }
   const result = await login(payload)
   if (!result.success) {
     toast({
@@ -27,11 +27,13 @@ async function handleSubmit() {
 <template>
     <form @submit.prevent="handleSubmit" class="flex flex-col gap-4 text-slate-900">
         <div>
-            <label for="username" class="block text-sm font-medium text-slate-700">Username</label>
+            <label for="email" class="block text-sm font-medium text-slate-700">Email</label>
             <input
-            id="username"
-            v-model="username"
+            id="email"
+            v-model="email"
             type="text"
+            inputmode="email"
+            autocomplete="email"
             required
             class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />

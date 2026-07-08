@@ -1,0 +1,1478 @@
+/**
+ * Shared state + view-models for the live exercise dashboard.
+ *
+ * This module is the single place that turns the raw reactive state exposed by
+ * `socket.js` (progresses, userStats, notifications, activity buffers, …) into
+ * the shapes the dashboard design consumes (leaderboard rows, podium, rotating
+ * champion scenes, live feed, activity timeline, header stats).
+ *
+ * It mirrors the pattern used by `socket.js`: a module-level singleton of
+ * reactive state and `computed` view-models that components import directly.
+ *
+ * Color strings reference the .sa-root token layer (see CLAUDE.md → Conventions)
+ * via `var(...)`, which resolves fine inside the inline styles these feed.
+ */
+import { ref, reactive, computed, watch } from 'vue'
+import {
+  progresses,
+  userStats,
+  notifications,
+  notificationCounter,
+  notificationAPICounter,
+  userActivity,
+  userActivityConfig,
+  notificationHistory,
+  notificationHistoryConfig,
+  active_exercises,
+  userCount,
+  shouldHideGamification,
+  userAuthenticated,
+  socketConnected,
+  zmqLastTime,
+  toggleVerboseMode,
+  toggleApiQueryMode,
+  userEvents,
+  loadUserEvents,
+  clearUserEvents
+} from '@/socket'
+
+/* ------------------------------------------------------------------ */
+/* Tunables (kept in sync with the source design)                     */
+/* ------------------------------------------------------------------ */
+const ROW_HEIGHT = 58 // px, height of a single leaderboard row slot (card + vertical padding)
+const SCENE_MS = 7000 // champion slot rotates between scenes this often
+const ROT_MS = 4500 // champion sub-list pages rotate this often
+const CHAMPION_PAGE = 4 // entries per champion sub-list page
+const JUST_SCORED_MS = 1700 // how long the "+N" score pop stays visible
+const BURST_MS = 1600 // how long the all-clear completion burst plays on a row
+const RECENT_LIMIT = 5 // rows in the "Just Cleared" strip pinned atop the feed
+const STALE_SEC = 20 // seconds since the last ZMQ message before the feed light warns "no live data"
+
+export { ROW_HEIGHT }
+
+/* ------------------------------------------------------------------ */
+/* Shared UI control state (header toggles + searches)                */
+/* ------------------------------------------------------------------ */
+export const sortByScore = ref(true)
+export const hideInactive = ref(false)
+export const autoPaginate = ref(true)
+export const searchUser = ref('')
+export const searchUrl = ref('')
+export const selectedExerciseIndex = ref(0)
+
+export function toggleSort() {
+  sortByScore.value = !sortByScore.value
+}
+export function toggleHide() {
+  hideInactive.value = !hideInactive.value
+}
+export function togglePaginate() {
+  autoPaginate.value = !autoPaginate.value
+}
+export function selectExercise(index) {
+  selectedExerciseIndex.value = index
+}
+
+// Live Feed options (restored from the legacy live-logs view). These are
+// server-side notification filters: the toggle mirrors its flag to the backend
+// via socket.js, and the server decides what the feed stream contains —
+// verbose shows all traffic, apiQueryOnly drops non-API requests. Both require
+// an authenticated (admin) session, so the menu gates them on `userAuthenticated`.
+export const verboseMode = ref(false)
+export const apiQueryOnly = ref(false)
+export { userAuthenticated }
+
+export function toggleVerbose() {
+  verboseMode.value = !verboseMode.value
+  toggleVerboseMode(verboseMode.value)
+}
+export function toggleApiQuery() {
+  apiQueryOnly.value = !apiQueryOnly.value
+  toggleApiQueryMode(apiQueryOnly.value)
+}
+
+export const selectedExercise = computed(() => {
+  const list = active_exercises.value
+  if (!list.length) return null
+  const idx = Math.min(selectedExerciseIndex.value, list.length - 1)
+  return list[idx]
+})
+
+// Keep the selected index valid as exercises are (de)selected.
+watch(active_exercises, (list) => {
+  if (selectedExerciseIndex.value > list.length - 1) {
+    selectedExerciseIndex.value = 0
+  }
+})
+
+export { active_exercises, shouldHideGamification }
+
+/* ------------------------------------------------------------------ */
+/* A single shared clock — drives rotation, countdowns, "just scored" */
+/* ------------------------------------------------------------------ */
+export const now = ref(Date.now())
+setInterval(() => {
+  now.value = Date.now()
+}, 1000)
+
+/* ------------------------------------------------------------------ */
+/* Champion slot scene control (auto-rotate, overridable by clicking)  */
+/* ------------------------------------------------------------------ */
+// On Fire / Speed Runner / Trophies, plus a Finishers scene that appears only
+// once someone has cleared everything (`sceneCount`, defined below, grows to 4).
+export const currentScene = ref(0)
+// Pinning freezes the rotation on whatever scene is showing (e.g. keep Finishers
+// up for the room). Manual jumps via the scene dots still work while pinned.
+export const scenePinned = ref(false)
+let lastSceneChange = now.value
+
+// Auto-advance on the shared clock; a manual pick resets the dwell timer
+// so the chosen scene gets a full SCENE_MS before rotation resumes. While
+// pinned, hold the timer at "now" so unpinning grants a fresh full dwell.
+watch(now, (t) => {
+  if (scenePinned.value) {
+    lastSceneChange = t
+    return
+  }
+  if (t - lastSceneChange >= SCENE_MS) {
+    currentScene.value = (currentScene.value + 1) % sceneCount.value
+    lastSceneChange = t
+  }
+})
+
+export function setScene(i) {
+  const n = sceneCount.value
+  currentScene.value = ((i % n) + n) % n
+  lastSceneChange = now.value
+}
+export function nextScene() {
+  setScene(currentScene.value + 1)
+}
+export function toggleScenePinned() {
+  scenePinned.value = !scenePinned.value
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                            */
+/* ------------------------------------------------------------------ */
+function splitEmail(email) {
+  const [local, domain] = String(email ?? '').split('@')
+  return { name: local || String(email ?? ''), org: domain ? '@' + domain : '' }
+}
+
+function heatColor(v) {
+  if (v <= 0) return 'rgba(var(--sa-cyan-rgb),.07)'
+  if (v <= 1) return 'rgba(var(--sa-cyan-rgb),.28)'
+  if (v <= 2) return 'rgba(var(--sa-cyan-rgb),.55)'
+  return 'var(--sa-cyan)'
+}
+
+// The row heat treatment is quantized into four intensity tiers (see heatColor);
+// mirror that ramp as a 0–3 level so the activity sparkline's bar heights follow
+// the same steps as the leaderboard's heat squares (and don't run off with a
+// single very busy bucket, the way a raw-magnitude scale would).
+function heatLevel(v) {
+  if (v <= 0) return 0
+  if (v <= 1) return 1
+  if (v <= 2) return 2
+  return 3
+}
+
+// Build an rgba() string from a `--x-rgb` channel-triple token and an alpha,
+// e.g. alpha('var(--sa-gold-rgb)', 0.13) → "rgba(var(--sa-gold-rgb), 0.13)".
+function alpha(rgbVar, a) {
+  return `rgba(${rgbVar}, ${a})`
+}
+
+function fmtDur(ms) {
+  if (!Number.isFinite(ms) || ms < 0) ms = 0
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const p = (x) => String(x).padStart(2, '0')
+  return (h ? p(h) + ':' : '') + p(m) + ':' + p(ss)
+}
+
+// Single-unit "time ago" for a recent event: "12s" / "3m" / "1h" / "2d".
+// Counts up live against the shared `now` clock — no new data needed.
+function fmtAgo(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h`
+  return `${Math.floor(h / 24)}d`
+}
+
+// Compact clock for an accumulated duration in seconds: "M:SS"
+// (or "H:MM:SS" past an hour). Used for "time on fire", which is a duration,
+// not a decimal-minutes count.
+function fmtClock(totalSeconds) {
+  const s = Math.max(0, Math.round(Number(totalSeconds) || 0))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const ss = s % 60
+  const p = (x) => String(x).padStart(2, '0')
+  return h ? `${h}:${p(m)}:${p(ss)}` : `${m}:${p(ss)}`
+}
+
+const bufferSize = computed(() => userActivityConfig.value?.activity_buffer_size || 0)
+
+function isActive(user_id) {
+  const act = userActivity.value?.[user_id]
+  if (!act || !act.length || !bufferSize.value) return false
+  const lastQuarter = act.slice(-parseInt(bufferSize.value / 4))
+  return lastQuarter.some((a) => a > 0)
+}
+
+function taskRequirementMet(tasksCompletion, task) {
+  const reqUuid = task.requirements?.inject_uuid
+  if (reqUuid === undefined) return true
+  return !!tasksCompletion[reqUuid]
+}
+
+/* ------------------------------------------------------------------ */
+/* "Just scored" detection — flash a +N when a user's score grows     */
+/* ------------------------------------------------------------------ */
+const prevScores = {}
+const prevDone = {}
+// Keyed by String(user_id) via a Map so a backend-supplied id like "__proto__"
+// or "constructor" is stored as data, not as a mutation of the container's
+// prototype (a plain object would let such ids poison the map). Vue 3
+// reactive() tracks Map operations, so reads via the view-models stay live.
+const gains = reactive(new Map())
+// Set the instant a user's completed-task count reaches the full set, used to
+// fire the one-shot all-clear burst. Only the live transition triggers it — a
+// page reload onto an already-complete board stays calm (prevDone is unseeded).
+const completions = reactive(new Map())
+
+// `state.progresses` is reassigned wholesale on every update, so its identity
+// already changes each time — a shallow (identity) watch fires reliably and
+// skips the deep-traversal cost that scaled with roster size (item 6, perf).
+watch(
+  () => progresses.value,
+  (np) => {
+    const ex = selectedExercise.value
+    if (!ex) return
+    const tasksLen = ex.tasks.length
+    for (const p of Object.values(np)) {
+      const exProgress = p.exercises?.[ex.uuid]
+      if (!exProgress) continue
+      const key = `${p.user_id}|${ex.uuid}`
+      const score = exProgress.score ?? 0
+      const prevScore = prevScores[key]
+      if (prevScore !== undefined && score > prevScore) {
+        gains.set(String(p.user_id), { gain: score - prevScore, at: Date.now() })
+      }
+      prevScores[key] = score
+
+      const done = Object.values(exProgress.tasks_completion || {}).filter(
+        (t) => t !== false
+      ).length
+      const prevD = prevDone[key]
+      if (prevD !== undefined && tasksLen > 0 && prevD < tasksLen && done >= tasksLen) {
+        completions.set(String(p.user_id), { at: Date.now() })
+      }
+      prevDone[key] = done
+    }
+  }
+)
+
+/* ------------------------------------------------------------------ */
+/* Leaderboard rows                                                   */
+/* ------------------------------------------------------------------ */
+const MEDALS = ['var(--sa-gold)', '#c7d3e6', '#e09b62']
+
+// Item 6 (perf): the leaderboard is split into a heavy data-driven base and a
+// thin time-driven overlay. `playersBase` does the O(P×T) work — each row's task
+// grid + heat, the score-rank pass and the display sort — and reads data only
+// (progresses / activity / sort / filter), so it rebuilds on data change, NOT on
+// the 1s clock. `players` overlays the per-row transient effects (on-fire
+// countdown, "+N" just-scored, all-clear burst) that DO read `now`, mapping the
+// stable base rows without rebuilding the grid or re-sorting. Base rows' `tasks`/
+// `heat` arrays keep their identity across ticks, so the squares don't re-render.
+const playersBase = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return []
+  const tasksLen = ex.tasks.length || 1
+
+  let rows = Object.values(progresses.value)
+    .filter((p) => p.exercises?.[ex.uuid] !== undefined)
+    .map((p, seq) => {
+      const exProgress = p.exercises[ex.uuid]
+      const tc = exProgress.tasks_completion || {}
+      const done = Object.values(tc).filter((t) => t !== false).length
+      const score = exProgress.score ?? 0
+      const maxScore = exProgress.max_score ?? 0
+      const { name, org } = splitEmail(p.email)
+
+      // On-fire is a live countdown (reads `now`), so only the raw interval is
+      // captured here; the overlay derives is-on-fire + bar % against the clock.
+      const status = p.status || {}
+      const fireInterval = status.on_fire_last_interval || null
+      const fireUntil = fireInterval ? fireInterval[1] * 1000 : 0
+      const fireStart = fireInterval ? fireInterval[0] * 1000 : 0
+      const fireEligible = !!status.is_on_fire
+
+      const heatSrc = userActivity.value?.[p.user_id] || []
+      const heat = heatSrc.map((v) => ({ bg: heatColor(v) }))
+
+      // First blood — the earliest completer of a task (flagged by the backend
+      // on the completion entry). Collected here from the same `tc` already
+      // iterated, so the badge costs no extra pass.
+      const firstBloodTasks = []
+      const tasks = ex.tasks.map((task, ti) => {
+        const completion = tc[task.uuid]
+        const isDone = completion !== undefined && completion !== false
+        const firstBlood = isDone && completion.first_completion === true
+        if (firstBlood) firstBloodTasks.push(ti + 1)
+        const avail = !isDone && taskRequirementMet(tc, task)
+        return {
+          uuid: task.uuid,
+          name: task.name,
+          done: isDone,
+          avail,
+          firstBlood,
+          bg: isDone
+            ? 'linear-gradient(180deg,var(--sa-cyan),var(--sa-mint))'
+            : avail
+              ? 'rgba(var(--sa-cyan-rgb),.12)'
+              : 'rgba(var(--sa-cyan-rgb),.04)',
+          border: isDone ? 'transparent' : avail ? 'var(--sa-cyan)' : 'rgba(110,130,160,.28)',
+          glow: avail ? '0 0 7px rgba(var(--sa-cyan-rgb),.45)' : 'none'
+        }
+      })
+
+      const complete = ex.tasks.length > 0 && done >= ex.tasks.length
+
+      return {
+        id: p.user_id,
+        name,
+        org,
+        active: isActive(p.user_id),
+        seq,
+        score,
+        maxScore,
+        done,
+        tasksLen,
+        doneLabel: `${done}/${tasksLen}`,
+        barPct: Math.round((done / tasksLen) * 100),
+        complete,
+        firstBloods: firstBloodTasks.length,
+        firstBloodTasks,
+        heat,
+        tasks,
+        fireEligible,
+        fireUntil,
+        fireStart
+      }
+    })
+
+  if (hideInactive.value) rows = rows.filter((r) => r.active)
+
+  // Competitive standing by score, computed independent of the display sort
+  // below — so the medal squares and the top-3 leader treatment follow the
+  // actual top scorers even when the board is ordered by name / join order.
+  const scoreRank = new Map()
+  ;[...rows]
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+    .forEach((r, i) => scoreRank.set(r.id, i))
+
+  rows.sort(
+    sortByScore.value
+      ? (a, b) => b.score - a.score || a.name.localeCompare(b.name)
+      : (a, b) => a.name.localeCompare(b.name) || a.seq - b.seq
+  )
+
+  return rows.map((r, i) => {
+    const sRank = scoreRank.get(r.id)
+    const top = sRank < 3 && r.score > 0
+    const done100 = r.complete
+    // Data-only decoration lives here; the score/row/glow tints that also blend
+    // the transient on-fire / just-scored states are finished in the overlay.
+    return {
+      ...r,
+      rank: sRank + 1,
+      top,
+      done100,
+      y: i * ROW_HEIGHT,
+      opacity: r.active ? 1 : 0.5,
+      rankFg: top ? 'var(--sa-ink)' : 'var(--sa-text-4)',
+      rankBg: top ? MEDALS[sRank] : 'rgba(var(--sa-cyan-rgb),.08)',
+      rankBorder: top ? 'transparent' : 'rgba(var(--sa-cyan-rgb),.18)',
+      rowBorder: done100
+        ? 'rgba(var(--sa-gold-rgb),.5)'
+        : top
+          ? 'rgba(var(--sa-gold-rgb),.22)'
+          : 'rgba(var(--sa-cyan-rgb),.08)',
+      rowAnim: done100 ? 'sa-clear 2.6s ease-in-out infinite' : 'none'
+    }
+  })
+})
+
+export const players = computed(() => {
+  const nowMs = now.value
+  return playersBase.value.map((r) => {
+    const onFire = r.fireEligible && r.fireUntil > nowMs
+    const fireBarPct =
+      onFire && r.fireUntil > r.fireStart
+        ? Math.max(
+            0,
+            Math.min(100, Math.round(((r.fireUntil - nowMs) / (r.fireUntil - r.fireStart)) * 100))
+          )
+        : 0
+
+    const g = gains.get(String(r.id))
+    const justScored = !!g && nowMs - g.at < JUST_SCORED_MS
+    const cmp = completions.get(String(r.id))
+    const justCompleted = !!cmp && nowMs - cmp.at < BURST_MS
+
+    const done100 = r.done100
+    const top = r.top
+    const just = justScored
+    return {
+      ...r,
+      isFire: onFire,
+      fireBarPct,
+      justScored,
+      justCompleted,
+      gain: g?.gain ?? 0,
+      // Clearing every task is the headline achievement — its gold/mint treatment
+      // outranks the on-fire, just-scored and top-3 row states.
+      scoreColor: done100
+        ? '#ffd970'
+        : onFire
+          ? 'var(--sa-fire-mid)'
+          : just
+            ? 'var(--sa-mint)'
+            : top
+              ? 'var(--sa-gold)'
+              : r.score === 0
+                ? 'var(--sa-text-6)'
+                : 'var(--sa-text-2)',
+      rowBg: done100
+        ? 'linear-gradient(90deg,rgba(var(--sa-mint-rgb),.12),rgba(var(--sa-gold-rgb),.07))'
+        : just
+          ? 'rgba(var(--sa-mint-rgb),.10)'
+          : top
+            ? 'rgba(var(--sa-gold-rgb),.06)'
+            : 'rgba(var(--sa-cyan-rgb),.03)',
+      glow: done100
+        ? '0 0 0 1px rgba(var(--sa-gold-rgb),.4),0 0 24px rgba(var(--sa-mint-rgb),.22)'
+        : just
+          ? '0 0 0 1px rgba(var(--sa-mint-rgb),.6),0 0 26px rgba(var(--sa-mint-rgb),.28)'
+          : 'none'
+    }
+  })
+})
+
+export const taskLabels = computed(() => (selectedExercise.value?.tasks || []).map((t) => t.name))
+
+/* ------------------------------------------------------------------ */
+/* Selected player — the drill-down drawer                            */
+/* ------------------------------------------------------------------ */
+// Which participant the drill-down drawer is profiling (user_id), or null when
+// closed. PlayerDrawer.vue is a pure view over `selectedPlayer` below; opening
+// and closing is just setting this ref. Exported so LiveLeaderboard can pause
+// its auto-paginate rotation while the drawer covers the board.
+export const selectedPlayerId = ref(null)
+export function openPlayer(id) {
+  selectedPlayerId.value = id
+  eventSearch.value = ''
+  // Seed the events rail with this player's per-user history (Phase 4); the
+  // socket `notification` handler then live-appends new events for them.
+  loadUserEvents(id)
+}
+export function closePlayer() {
+  selectedPlayerId.value = null
+  eventSearch.value = ''
+  clearUserEvents()
+}
+
+// Live status chips for the drawer header, mapped from the same
+// progresses[user_id].status the leaderboard already consumes. The three fixed
+// badges carry preset token colours; each collected trophy borrows its glyph +
+// hue from TROPHY_GLYPHS (as the champion slot does), falling back to a 🏆.
+const CHIP_STYLES = {
+  fire: {
+    color: 'var(--sa-fire-mid)',
+    background: 'rgba(var(--sa-fire-mid-rgb),.14)',
+    borderColor: 'rgba(var(--sa-fire-deep-rgb),.5)'
+  },
+  speed: {
+    color: 'var(--sa-cyan)',
+    background: 'rgba(var(--sa-cyan-rgb),.12)',
+    borderColor: 'rgba(var(--sa-cyan-rgb),.45)'
+  },
+  fame: {
+    color: 'var(--sa-gold-bright)',
+    background: 'rgba(var(--sa-gold-rgb),.12)',
+    borderColor: 'rgba(var(--sa-gold-rgb),.5)'
+  }
+}
+
+function statusChips(status) {
+  if (!status) return []
+  const chips = []
+  if (status.is_on_fire)
+    chips.push({ key: 'fire', glyph: '🔥', label: 'ON FIRE', style: CHIP_STYLES.fire })
+  if (status.is_speed_runner)
+    chips.push({ key: 'speed', glyph: '⚡', label: 'SPEED RUNNER', style: CHIP_STYLES.speed })
+  if (status.is_on_all_house_fame)
+    chips.push({ key: 'fame', glyph: '⭐', label: 'HALL OF FAME', style: CHIP_STYLES.fame })
+  ;(status.trophies || []).forEach((t, i) => {
+    const g = TROPHY_GLYPHS[t.id] || { icon: '🏆', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' }
+    chips.push({
+      key: `trophy-${t.id ?? i}`,
+      glyph: g.icon,
+      label: t.name || t.id || 'Trophy',
+      style: { color: g.c, background: alpha(g.rgb, 0.1), borderColor: alpha(g.rgb, 0.42) }
+    })
+  })
+  return chips
+}
+
+// The profiled row, resolved live from the leaderboard view-model so the header
+// tracks score / rank / status as the player acts. Returns null when the drawer
+// is closed or the player has left the roster (which closes the drawer). The
+// early null return keeps it off the 1s clock while closed — it only reads
+// `players` (and thus `now`) once a player is selected.
+export const selectedPlayer = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+  const row = players.value.find((r) => r.id === id)
+  if (!row) return null
+  const status = progresses.value?.[id]?.status
+  return {
+    id: row.id,
+    name: row.name,
+    org: row.org,
+    rank: row.rank,
+    top: row.top,
+    score: row.score,
+    maxScore: row.maxScore,
+    complete: row.complete,
+    chips: statusChips(status)
+  }
+})
+
+// A completion gap this many times the player's median gap (or longer) is
+// flagged "slow" — a soft monitoring hint on the timing list, not a hard rule.
+const SLOW_GAP_FACTOR = 1.5
+
+// Per-task timing profile for the drill-down drawer (Phase 2): each task of the
+// selected exercise, in order, with its state (done / on-now / locked), the time
+// into the exercise it was completed, and the gap to the previous completion.
+//
+// Gaps mirror the backend exactly (leaderboard.py
+// `get_sorted_timestamps_for_completed_tasks` + the ascending sort in
+// `get_user_completion_time`): collect the completed timestamps, sort ascending,
+// and gap[i] = t[i] − t[i−1]; the first completion's gap is measured from
+// `exerciseStart` — the same earliest-completion anchor `elapsed` / `finishers`
+// use. "On now" = an available task (prerequisites met, not yet done); "locked"
+// = a task whose prerequisite is unmet.
+//
+// Returns null when the drawer is closed or the player/exercise is gone, so it
+// stays off the 1s clock while closed; once open it reads `now` only for the
+// live "started N ago" / "idle N" labels on the current task(s), and touches one
+// player's handful of tasks — far below the O(P×T) roster passes item 6 guards.
+export const selectedPlayerTasks = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+  const ex = selectedExercise.value
+  if (!ex) return null
+  const prog = progresses.value?.[id]?.exercises?.[ex.uuid]
+  if (!prog) return null
+
+  const tc = prog.tasks_completion || {}
+  const start = exerciseStart.value
+  const nowMs = now.value
+
+  // Completed timestamps in ascending order → per-task gap to the previous
+  // completion (the earliest is measured from the exercise-start anchor).
+  const doneTs = []
+  for (const task of ex.tasks) {
+    const c = tc[task.uuid]
+    if (c && c.timestamp) doneTs.push({ uuid: task.uuid, ts: c.timestamp * 1000 })
+  }
+  doneTs.sort((a, b) => a.ts - b.ts)
+  const gapByUuid = {}
+  let prev = start
+  doneTs.forEach((d, i) => {
+    const base = i === 0 ? start : prev
+    gapByUuid[d.uuid] = { ms: base !== null ? Math.max(0, d.ts - base) : null, first: i === 0 }
+    prev = d.ts
+  })
+
+  // Median gap → the "slow" threshold. Skip it until there are enough samples
+  // for a median to mean anything (a 1–2 task player has no baseline).
+  const gapVals = doneTs.map((d) => gapByUuid[d.uuid].ms).filter((m) => m !== null)
+  const sortedGaps = [...gapVals].sort((a, b) => a - b)
+  const median = sortedGaps.length ? sortedGaps[Math.floor((sortedGaps.length - 1) / 2)] : 0
+  const slowThreshold = sortedGaps.length >= 3 && median > 0 ? median * SLOW_GAP_FACTOR : Infinity
+
+  // Count done the leaderboard way (any non-false completion) so the drawer's
+  // "N/total" always agrees with the row badge; gap math still uses the
+  // timestamped `doneTs` (identical in practice — completions carry timestamps).
+  const total = ex.tasks.length
+  const doneCount = ex.tasks.filter((t) => {
+    const c = tc[t.uuid]
+    return c !== undefined && c !== false
+  }).length
+  const lastMs = doneTs.length ? doneTs[doneTs.length - 1].ts : null
+  const cleared = total > 0 && doneCount >= total
+  const active = isActive(id)
+
+  // Reference for the current task's live label: how long since the player last
+  // made progress (their last completion, else the exercise start).
+  const refMs = lastMs ?? start
+  const sinceLabel = refMs !== null ? fmtAgo(Math.max(0, nowMs - refMs)) : null
+
+  const posByUuid = {}
+  ex.tasks.forEach((t, i) => (posByUuid[t.uuid] = i + 1))
+
+  let onPos = null
+  const tasks = ex.tasks.map((task, i) => {
+    const pos = i + 1
+    const c = tc[task.uuid]
+    const isDone = c !== undefined && c !== false
+    if (isDone) {
+      const g = gapByUuid[task.uuid]
+      const atMs = c.timestamp ? c.timestamp * 1000 : null
+      const atLabel = atMs !== null && start !== null ? fmtDur(atMs - start) : '—'
+      const gapMs = g?.ms ?? null
+      return {
+        key: task.uuid,
+        pos,
+        num: '✓',
+        name: task.name,
+        state: 'done',
+        firstBlood: c.first_completion === true,
+        atLabel,
+        atTitle: atLabel !== '—' ? `Completed at ${atLabel} into the exercise` : 'Completed',
+        gapLabel: gapMs !== null ? '+' + fmtClock(gapMs / 1000) : '—',
+        gapClass: gapMs !== null && gapMs >= slowThreshold ? 'slow' : '',
+        gapTitle: g?.first
+          ? 'Time to first completion — measured from the exercise start'
+          : 'Time on this task — elapsed between the previous completion and this one'
+      }
+    }
+    if (taskRequirementMet(tc, task)) {
+      // Only the first open task is the highlighted "current" one; further
+      // unlocked-but-undone tasks (a no-prerequisite exercise unlocks them all
+      // at once) render as quieter "available" rows. A linear chain only ever
+      // has one open task, so it always reads as a single current task.
+      if (onPos === null) {
+        onPos = pos
+        return {
+          key: task.uuid,
+          pos,
+          num: pos,
+          name: task.name,
+          state: 'now',
+          onNow: active,
+          sinceLabel
+        }
+      }
+      return { key: task.uuid, pos, num: pos, name: task.name, state: 'avail' }
+    }
+    const reqUuid = task.requirements?.inject_uuid
+    return {
+      key: task.uuid,
+      pos,
+      num: pos,
+      name: task.name,
+      state: 'lock',
+      reqPos: reqUuid ? posByUuid[reqUuid] ?? null : null
+    }
+  })
+
+  return {
+    tasks,
+    done: doneCount,
+    total,
+    pct: total ? Math.round((doneCount / total) * 100) : 0,
+    cleared,
+    clearTime: cleared && lastMs !== null && start !== null ? fmtDur(lastMs - start) : null,
+    onPos
+  }
+})
+
+// Last-seen + activity sparkline for the drill-down drawer (Phase 3), derived
+// from the per-user activity buffer (`userActivity[id]`, oldest → newest bucket;
+// the rightmost bucket is "now") and its config (`userActivityConfig`). Bucket
+// duration = 60 / buffer_resolution_per_minute seconds, exactly as the backend
+// advances the ring (server.py `record_users_activity`, cadence
+// USER_ACTIVITY_FREQUENCY = 60 / resolution).
+//
+// - last non-zero bucket → "last seen N ago"; "active now" reuses the same
+//   `isActive` window the leaderboard uses (any activity in the last quarter),
+//   and an all-zero / empty buffer reads "no activity".
+// - the sparkline reuses the row heat ramp (heatColor + the 4-tier heatLevel),
+//   so a bar's colour and height match the leaderboard's heat squares.
+//
+// Returns null while the drawer is closed (keeps it off the compute path); once
+// open it reads only the activity buffer, so it recomputes on the
+// `update_users_activity` push, not the 1s clock — the "N ago" label is measured
+// in whole buckets, not wall-time, so it steps with the data rather than drifting.
+export const selectedPlayerActivity = computed(() => {
+  const id = selectedPlayerId.value
+  if (id === null) return null
+
+  const cfg = userActivityConfig.value || {}
+  const resPerMin = cfg.buffer_resolution_per_minute || 0
+  const bucketSec = resPerMin > 0 ? 60 / resPerMin : 0
+
+  const act = userActivity.value?.[id] || []
+  const size = act.length
+
+  const bars = act.map((v) => ({ h: 18 + heatLevel(v) * 24, bg: heatColor(v) }))
+
+  // Newest non-zero bucket → how many whole buckets back the player was last seen.
+  let lastIdx = -1
+  for (let i = size - 1; i >= 0; i--) {
+    if (act[i] > 0) {
+      lastIdx = i
+      break
+    }
+  }
+  const hasActivity = lastIdx >= 0
+  const active = isActive(id)
+  const agoMs = hasActivity && bucketSec ? (size - 1 - lastIdx) * bucketSec * 1000 : null
+
+  const seenState = !hasActivity ? 'cold' : active ? 'on' : 'off'
+  const windowMin = cfg.timestamp_min || (bucketSec ? Math.round((size * bucketSec) / 60) : 0)
+
+  return {
+    bars,
+    seenState,
+    seenAgo: seenState === 'off' && agoMs !== null ? fmtAgo(agoMs) : null,
+    axisLeft: windowMin ? `−${windowMin} min` : '',
+    axisSub: size ? `${size} buckets · ~${Math.round(bucketSec)}s each` : 'no activity data'
+  }
+})
+
+// Recent events for the drill-down drawer's events rail (Phase 4). Shapes the
+// per-user event history held in socket.js (`userEvents` — seeded from the
+// backend `get_user_events` ring on open, live-appended for this player) using
+// the same row treatment as the Live Feed (`feed`): a method chip, url /
+// target_tool, and a 2-line payload preview with a "▸ N more" fold. Webhooks get
+// the violet chip + tint the Live Feed uses, and a single hook line. Newest
+// first (the buffer is already ordered). Returns null while the drawer is closed
+// so it stays off the compute path; each event carries the server clock time.
+// Free-text filter for the events rail (Phase 4 follow-up). Matched against the
+// method, url / target_tool, and payload text — mirrors the Live Feed's `feed`
+// filter (searchUrl) so the same query behaves the same in both places. Reset
+// per player in openPlayer/closePlayer so it never carries across drawers.
+export const eventSearch = ref('')
+
+function eventMatches(e, q) {
+  // Webhooks show as WEBHOOK/HOOK but still carry an http_method; make all of
+  // "webhook", "hook" and the underlying verb ("post"…) matchable.
+  const method = (e.notification_origin === 'webhook' ? 'webhook hook ' : '') + (e.http_method || '')
+  if (method.toLowerCase().includes(q)) return true
+  if ((e.url || '').toLowerCase().includes(q)) return true
+  if ((e.target_tool || '').toLowerCase().includes(q)) return true
+  const p = e.payload
+  if (p && typeof p === 'object')
+    return Object.entries(p).some(([k, v]) => `${k}${v}`.toLowerCase().includes(q))
+  if (typeof p === 'string') return p.toLowerCase().includes(q)
+  return false
+}
+
+export const selectedPlayerEvents = computed(() => {
+  if (selectedPlayerId.value === null) return null
+  const q = eventSearch.value.trim().toLowerCase()
+  const src = q ? userEvents.value.filter((e) => eventMatches(e, q)) : userEvents.value
+  return src.map((e) => {
+    const isWebhook = e.notification_origin === 'webhook'
+    const method = isWebhook ? 'HOOK' : e.http_method
+    const [fg, bg] = methodStyle(e.http_method)
+    const hasPayload = isDisplayablePayload(e.payload)
+    const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
+    const preview = pl.lines.slice(0, PAYLOAD_PREVIEW_LINES)
+    const more = pl.lines.length - preview.length
+    return {
+      id: e.id,
+      isWebhook,
+      method,
+      methodLabel: isWebhook ? 'WEBHOOK' : method,
+      methodFg: isWebhook ? 'var(--sa-violet)' : fg,
+      methodBg: isWebhook ? 'rgba(var(--sa-violet-rgb),.16)' : bg,
+      url: isWebhook ? e.target_tool || 'webhook' : e.url,
+      time: e.time || '',
+      hasPayload,
+      payloadIsString: pl.isString,
+      payloadLines: preview,
+      moreCount: more > 0 ? more : 0
+    }
+  })
+})
+
+// Unfiltered event count for the rail — drives the "N of M" header when a filter
+// is active and tells an empty buffer apart from a filter with no matches. 0
+// while the drawer is closed.
+export const selectedPlayerEventsTotal = computed(() =>
+  selectedPlayerId.value === null ? 0 : userEvents.value.length
+)
+
+/* ------------------------------------------------------------------ */
+/* Per-task completion — the class-wide "which task is the wall?"      */
+/* ------------------------------------------------------------------ */
+// For the selected exercise, the fraction of participants who have cleared each
+// task. Derived from `progresses` only (no `now`), so it recomputes on data
+// change, not per tick. Bar height = cleared fraction; colour ramps by
+// difficulty — low completion (the wall) is red/amber, high is mint.
+function completionTier(frac) {
+  if (frac >= 0.66) return { rgb: 'var(--sa-mint-rgb)', solid: 'var(--sa-mint)' }
+  if (frac >= 0.33) return { rgb: 'var(--sa-gold-rgb)', solid: 'var(--sa-gold)' }
+  return { rgb: 'var(--sa-danger-rgb)', solid: 'var(--sa-danger)' }
+}
+
+export const taskCompletion = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return { tasks: [], participants: 0 }
+  const participants = Object.values(progresses.value).filter(
+    (p) => p.exercises?.[ex.uuid] !== undefined
+  )
+  const n = participants.length
+  const tasks = ex.tasks.map((task, i) => {
+    let cleared = 0
+    for (const p of participants) {
+      const c = p.exercises[ex.uuid].tasks_completion?.[task.uuid]
+      if (c !== undefined && c !== false) cleared++
+    }
+    const frac = n > 0 ? cleared / n : 0
+    const pct = Math.round(frac * 100)
+    const tier = completionTier(frac)
+    return {
+      num: i + 1,
+      name: task.name,
+      cleared,
+      total: n,
+      pct,
+      fg: tier.solid,
+      barBg: `linear-gradient(180deg, ${tier.solid}, rgba(${tier.rgb}, .3))`,
+      glow: `0 0 7px rgba(${tier.rgb}, .4)`,
+      title: `${task.name} — ${cleared} / ${n} cleared (${pct}%)`
+    }
+  })
+  return { tasks, participants: n }
+})
+
+/* ------------------------------------------------------------------ */
+/* Global progress footer                                             */
+/* ------------------------------------------------------------------ */
+export const globalProgress = computed(() => {
+  const ex = selectedExercise.value
+  const usersWithEx = Object.values(progresses.value).filter((p) => p.exercises?.[ex?.uuid])
+  let collectiveScore = 0
+  let totalCompleted = 0
+  for (const p of usersWithEx) {
+    const exProgress = p.exercises[ex.uuid]
+    collectiveScore += exProgress.score ?? 0
+    totalCompleted += Object.values(exProgress.tasks_completion || {}).filter(
+      (t) => t !== false
+    ).length
+  }
+  const denom = (usersWithEx.length || 1) * (ex?.tasks.length || 1)
+  const globalPct = Math.max(0, Math.min(100, Math.round((totalCompleted / denom) * 100)))
+  return { collectiveScore, totalCompleted, globalPct }
+})
+
+/* ------------------------------------------------------------------ */
+/* Header stats                                                       */
+/* ------------------------------------------------------------------ */
+export const activeCount = computed(
+  () => Object.keys(progresses.value).filter((uid) => isActive(uid)).length
+)
+export const totalCount = computed(() => userCount.value)
+
+export const clock = computed(() => {
+  const d = new Date(now.value)
+  const p = (x) => String(x).padStart(2, '0')
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+})
+
+// Item 6 (perf): the earliest-completion anchor is O(P×T) to find, so cache it
+// in its own data-driven computed (recomputes on progress change only); the live
+// clock then formats against it in O(1) each tick instead of rescanning.
+const exerciseStart = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return null
+  let min = Infinity
+  for (const p of Object.values(progresses.value)) {
+    const tc = p.exercises?.[ex.uuid]?.tasks_completion
+    if (!tc) continue
+    for (const c of Object.values(tc)) {
+      if (c && c.timestamp) min = Math.min(min, c.timestamp * 1000)
+    }
+  }
+  return Number.isFinite(min) ? min : null
+})
+
+export const elapsed = computed(() => {
+  const start = exerciseStart.value
+  if (start === null) return '00:00'
+  return fmtDur(now.value - start)
+})
+
+/* ------------------------------------------------------------------ */
+/* Connection / data-freshness light (Live Feed header)               */
+/* ------------------------------------------------------------------ */
+// Turns the raw socket/ZMQ signals into a three-state health light. O(1), so
+// ticking every second against the shared clock is free.
+//   LIVE     — socket up and a ZMQ message within STALE_SEC (mint, unchanged)
+//   IDLE     — socket up but no ZMQ data yet, or gone quiet ≥ STALE_SEC (amber)
+//   OFFLINE  — socket down (red)
+// `zmqLastTime` is Unix seconds (or false/null before any keep_alive carries a
+// timestamp); the shared `now` is ms, so compare in ms.
+export const connectionHealth = computed(() => {
+  const lastSec = zmqLastTime.value
+  const ageMs = typeof lastSec === 'number' ? Math.max(0, now.value - lastSec * 1000) : null
+
+  if (!socketConnected.value) {
+    return {
+      state: 'offline',
+      label: 'OFFLINE',
+      color: 'var(--sa-danger)',
+      tooltip: 'Offline · reconnecting…'
+    }
+  }
+  if (ageMs === null) {
+    return {
+      state: 'idle',
+      label: 'NO LIVE DATA',
+      color: 'var(--sa-gold)',
+      tooltip: 'Connected · waiting for data'
+    }
+  }
+  if (ageMs >= STALE_SEC * 1000) {
+    return {
+      state: 'idle',
+      label: 'NO LIVE DATA',
+      color: 'var(--sa-gold)',
+      tooltip: `No live data · last message ${fmtAgo(ageMs)} ago`
+    }
+  }
+  return {
+    state: 'live',
+    label: 'LIVE',
+    color: 'var(--sa-mint)',
+    tooltip: `Live · last message ${fmtAgo(ageMs)} ago`
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* Hall of Fame podium (top 3, arranged 2nd · 1st · 3rd)              */
+/* ------------------------------------------------------------------ */
+export const podium = computed(() => {
+  const ranked = (userStats.value?.hall_of_fame || []).slice(0, 3)
+  // arrange as [2nd, 1st, 3rd] for the classic podium silhouette
+  return [1, 0, 2]
+    .map((r) => (ranked[r] ? { entry: ranked[r], r } : null))
+    .filter(Boolean)
+    .map(({ entry, r }) => {
+      const first = r === 0
+      const { name } = splitEmail(entry.email)
+      // Badge: the digits embedded in a participant's name (e.g. trainee07 → 07),
+      // falling back to the first two letters when the name has no digits.
+      const digits = name.replace(/\D/g, '').slice(0, 2)
+      return {
+        id: entry.user_id,
+        name,
+        score: entry.score,
+        rank: r + 1,
+        initials: digits ? digits.padStart(2, '0') : name.slice(0, 2).toUpperCase(),
+        first,
+        medal: MEDALS[r],
+        glow: first ? 'rgba(var(--sa-gold-rgb),.6)' : 'rgba(199,211,230,.3)',
+        scoreColor: MEDALS[r],
+        badge: first ? 52 : 38,
+        nameSize: first ? 17 : 13,
+        scoreSize: first ? 20 : 14,
+        badgeAnim: first ? 'sa-gold 2s ease-in-out infinite' : 'sa-pop .5s ease',
+        barH: first ? 48 : r === 1 ? 34 : 24,
+        barBg: first
+          ? 'linear-gradient(180deg,var(--sa-gold),rgba(var(--sa-gold-rgb),.06))'
+          : `linear-gradient(180deg,${MEDALS[r]},rgba(199,211,230,.04))`
+      }
+    })
+})
+
+/* ------------------------------------------------------------------ */
+/* Finishers honor roll (everyone who cleared every task)             */
+/* ------------------------------------------------------------------ */
+// Finish order is by the timestamp of a participant's final completed task;
+// "clear time" is measured from the exercise start (the earliest completion
+// across all participants — the same anchor used by `elapsed`).
+export const finishers = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return []
+  const tasksLen = ex.tasks.length
+  if (!tasksLen) return []
+
+  let start = Infinity
+  const cleared = []
+  for (const p of Object.values(progresses.value)) {
+    const tc = p.exercises?.[ex.uuid]?.tasks_completion
+    if (!tc) continue
+    let last = 0
+    let count = 0
+    for (const c of Object.values(tc)) {
+      if (c === false) continue
+      count++
+      const ts = (c && c.timestamp ? c.timestamp : 0) * 1000
+      if (ts) {
+        last = Math.max(last, ts)
+        start = Math.min(start, ts)
+      }
+    }
+    if (count >= tasksLen) cleared.push({ user_id: p.user_id, email: p.email, finishedAt: last })
+  }
+  if (!Number.isFinite(start)) start = 0
+
+  cleared.sort(
+    (a, b) => a.finishedAt - b.finishedAt || String(a.email).localeCompare(String(b.email))
+  )
+  return cleared.map((d, i) => {
+    const { name, org } = splitEmail(d.email)
+    return {
+      id: d.user_id,
+      name,
+      org,
+      rank: i + 1,
+      first: i === 0,
+      medal: MEDALS[i] || 'var(--sa-text-3)',
+      clear: d.finishedAt ? fmtDur(d.finishedAt - start) : '—'
+    }
+  })
+})
+
+/* ------------------------------------------------------------------ */
+/* Recent completions ("Just Cleared" — what just got finished)        */
+/* ------------------------------------------------------------------ */
+// Every completed task across all participants for the selected exercise,
+// newest first. Timestamps only (no `now`), so it recomputes on progress
+// changes, not every tick; the "ago" label is stamped on top against `now`.
+const recentCompletions = computed(() => {
+  const ex = selectedExercise.value
+  if (!ex) return []
+  // Task name + 1-based position (matches the numbered leaderboard headers).
+  const taskName = {}
+  const taskNum = {}
+  ex.tasks.forEach((t, i) => {
+    taskName[t.uuid] = t.name
+    taskNum[t.uuid] = i + 1
+  })
+
+  const items = []
+  for (const p of Object.values(progresses.value)) {
+    const tc = p.exercises?.[ex.uuid]?.tasks_completion
+    if (!tc) continue
+    for (const [taskUuid, c] of Object.entries(tc)) {
+      if (!c || c === false || !c.timestamp) continue
+      items.push({
+        user_id: p.user_id,
+        email: p.email,
+        taskUuid,
+        at: c.timestamp * 1000,
+        first: c.first_completion === true
+      })
+    }
+  }
+  items.sort((a, b) => b.at - a.at)
+  return items.slice(0, RECENT_LIMIT).map((it) => {
+    const { name, org } = splitEmail(it.email)
+    return {
+      id: `${it.user_id}|${it.taskUuid}`,
+      taskName: taskName[it.taskUuid] || '—',
+      taskNum: taskNum[it.taskUuid] || null,
+      name,
+      org,
+      at: it.at,
+      first: it.first
+    }
+  })
+})
+
+// Render-ready rows for the "Just Cleared" strip pinned atop the Live Feed:
+// recentCompletions with a live "ago" stamped against the shared clock, the
+// most recent flagged `top` for a subtle emphasis. Lives beside the raw feed
+// (not in the champion rotation) so "what just happened" is always on screen.
+export const justCleared = computed(() => {
+  const nowMs = now.value
+  return recentCompletions.value.map((it, i) => ({
+    id: it.id,
+    name: it.name,
+    taskName: it.taskName,
+    taskNum: it.taskNum,
+    first: it.first,
+    ago: fmtAgo(nowMs - it.at),
+    top: i === 0
+  }))
+})
+
+// On Fire / Speed / Trophies, plus a fourth Finishers scene once at least one
+// participant has cleared everything. Drives the champion slot's rotation.
+export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
+
+/* ------------------------------------------------------------------ */
+/* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
+/* ------------------------------------------------------------------ */
+// Item 6 (perf): the champion sub-list page index advances every ROT_MS. Deriving
+// it in its own computed means it only changes value on that cadence — so the
+// `champions` view-model (which reads it) recomputes on rotation / scene / stats
+// change, not every 1s tick as it did when it read `now` directly.
+const championRot = computed(() => Math.floor(now.value / ROT_MS))
+
+function buildCard(ranked, fmt, fracOf) {
+  const rot = championRot.value
+  const leader = ranked[0]
+    ? { name: splitEmail(ranked[0].email).name, val: fmt(ranked[0].v), v: ranked[0].v }
+    : { name: '—', val: fmt(0), v: 0 }
+  const rest = ranked.slice(1, 9)
+  const pages = Math.max(1, Math.ceil(rest.length / CHAMPION_PAGE))
+  const cur = rot % pages
+  const page = rest.slice(cur * CHAMPION_PAGE, cur * CHAMPION_PAGE + CHAMPION_PAGE).map((e, i) => ({
+    rank: cur * CHAMPION_PAGE + i + 2,
+    name: splitEmail(e.email).name,
+    val: fmt(e.v),
+    v: e.v,
+    frac: Math.max(0, Math.min(100, Math.round(fracOf(e.v) * 100)))
+  }))
+  return { leader, page, pages, cur }
+}
+
+const TROPHY_GLYPHS = {
+  grinder: { icon: '⛏', c: 'var(--sa-gold)', rgb: 'var(--sa-gold-rgb)' },
+  'bounce-back': { icon: '↺', c: 'var(--sa-mint)', rgb: 'var(--sa-mint-rgb)' },
+  messenger: { icon: '✉', c: 'var(--sa-cyan)', rgb: 'var(--sa-cyan-rgb)' },
+  spammer: { icon: '◎', c: 'var(--sa-violet)', rgb: 'var(--sa-violet-rgb)' }
+}
+
+const DEFAULT_FIRE_WINDOW_SEC = 240
+
+// Heat tiers keyed on fraction of max earnable time-on-fire; named tiers are
+// reserved for high performers, < 25% stays the unlabelled "Warm" baseline.
+const FIRE_TIERS = [
+  {
+    min: 0.75,
+    label: 'INFERNO',
+    fg: 'var(--sa-gold-bright)',
+    bar: 'linear-gradient(90deg,var(--sa-fire-deep),#ffb24a 55%,#fff6d8)',
+    glow: '0 0 16px rgba(var(--sa-fire-deep-rgb),.85)',
+    flameAnim: 'sa-flame .45s infinite'
+  },
+  {
+    min: 0.5,
+    label: 'BLAZING',
+    fg: '#ff9a5c',
+    bar: 'linear-gradient(90deg,#ff7a3c,var(--sa-fire-deep))',
+    glow: '0 0 12px rgba(var(--sa-fire-deep-rgb),.6)',
+    flameAnim: 'sa-flame .75s infinite'
+  },
+  {
+    min: 0.25,
+    label: 'HOT',
+    fg: 'var(--sa-fire-mid)',
+    bar: 'linear-gradient(90deg,rgba(var(--sa-fire-mid-rgb),.55),var(--sa-fire-mid))',
+    glow: '0 0 8px rgba(var(--sa-fire-mid-rgb),.5)',
+    flameAnim: 'sa-flame 1.1s infinite'
+  },
+  {
+    min: 0,
+    label: '',
+    fg: '#e0a06a',
+    bar: 'linear-gradient(90deg,rgba(255,178,74,.35),#ffb24a)',
+    glow: 'none',
+    flameAnim: 'sa-flame 1.7s infinite'
+  }
+]
+
+function fireTier(fill) {
+  return FIRE_TIERS.find((t) => fill >= t.min) || FIRE_TIERS[FIRE_TIERS.length - 1]
+}
+
+const SPEED_SEGMENTS = 10
+
+// Speed tiers keyed on the 0-10 Speed Index as a fraction of its ceiling; named
+// tiers are reserved for high performers, < 25% stays the unlabelled baseline.
+// Mirror of the on-fire heat tiers, in a cyan→white-hot palette with a ⚡ pulse
+// that quickens with the tier.
+const SPEED_TIERS = [
+  {
+    min: 0.75,
+    label: 'BLITZ',
+    fg: '#eaffff',
+    seg: '#cdf4ff',
+    glow: '0 0 9px rgba(150,235,255,.95)',
+    boltAnim: 'sa-bolt .5s infinite'
+  },
+  {
+    min: 0.5,
+    label: 'TURBO',
+    fg: '#7fe7ff',
+    seg: '#4fd8ff',
+    glow: '0 0 7px rgba(79,216,255,.7)',
+    boltAnim: 'sa-bolt .8s infinite'
+  },
+  {
+    min: 0.25,
+    label: 'BRISK',
+    fg: 'var(--sa-cyan)',
+    seg: 'var(--sa-cyan)',
+    glow: '0 0 5px rgba(var(--sa-cyan-rgb),.5)',
+    boltAnim: 'sa-bolt 1.2s infinite'
+  },
+  {
+    min: 0,
+    label: '',
+    fg: '#6fa8c8',
+    seg: '#3f7d9c',
+    glow: 'none',
+    boltAnim: 'sa-bolt 1.8s infinite'
+  }
+]
+
+function speedTier(frac) {
+  return SPEED_TIERS.find((t) => frac >= t.min) || SPEED_TIERS[SPEED_TIERS.length - 1]
+}
+
+export const champions = computed(() => {
+  const scenes = sceneCount.value
+  const scene = currentScene.value % scenes
+
+  // On fire — accumulated time-on-fire (seconds), shown as an m:ss clock.
+  // Heat tier = fraction of the max earnable fire (totalTasks × fireWindow).
+  const fireWindowSec =
+    userStats.value?.settings?.time_on_fire_window_sec || DEFAULT_FIRE_WINDOW_SEC
+  const totalFireTasks = active_exercises.value.reduce((s, ex) => s + (ex.tasks?.length || 0), 0)
+  const maxEarnableFire = Math.max(1, totalFireTasks * fireWindowSec)
+  const fireRanked = (userStats.value?.time_on_fire || [])
+    .filter((e) => e.time_on_fire > 0)
+    .map((e) => ({ email: e.email, v: e.time_on_fire }))
+  const fireCard = buildCard(
+    fireRanked,
+    (v) => fmtClock(v),
+    (v) => v / maxEarnableFire
+  )
+  const decorateFire = (item) => {
+    const fill = Math.max(0, Math.min(1, item.v / maxEarnableFire))
+    return { ...item, fill: Math.round(fill * 100), ...fireTier(fill) }
+  }
+  const fireLeader = decorateFire(fireCard.leader)
+  const fireRest = fireCard.page.map(decorateFire)
+
+  // Speed runner — 0-10 Speed Index = speedrunner_score / perfect-run ceiling.
+  // This IS the ranking quantity (monotonic with speedrunner_score), so the
+  // column tracks the leaderboard order — unlike the old avg-points-per-task
+  // value, which was mislabelled "seconds" and didn't track rank.
+  const speedRanked = (userStats.value?.speed_runner || [])
+    .filter((e) => (e.speedrunner_score ?? 0) > 0)
+    .map((e) => ({ email: e.email, v: e.speedrunner_score }))
+  const speedCeiling = Math.max(
+    1e-6,
+    userStats.value?.settings?.speedrunner_score_ceiling || speedRanked[0]?.v || 1
+  )
+  const speedIndex = (v) => Math.max(0, Math.min(10, (v / speedCeiling) * 10))
+  const speedCard = buildCard(
+    speedRanked,
+    (v) => speedIndex(v).toFixed(1),
+    (v) => v / speedCeiling
+  )
+  const decorateSpeed = (item) => {
+    const idx = speedIndex(item.v)
+    const lit = Math.round(idx)
+    return {
+      ...item,
+      fill: Math.round((idx / 10) * 100),
+      segments: Array.from({ length: SPEED_SEGMENTS }, (_, i) => ({ on: i < lit })),
+      ...speedTier(idx / 10)
+    }
+  }
+  const speedLeader = decorateSpeed(speedCard.leader)
+  const speedRest = speedCard.page.map(decorateSpeed)
+
+  // Trophies — up to 4 holders
+  const trophyObj = userStats.value?.trophies || {}
+  const trophies = Object.entries(trophyObj).map(([id, t]) => {
+    const glyph = TROPHY_GLYPHS[id] || {
+      icon: '🏆',
+      c: 'var(--sa-gold)',
+      rgb: 'var(--sa-gold-rgb)'
+    }
+    const winners = (t.users || []).map((u) => splitEmail(u.email).name)
+    const holder =
+      winners.length === 0
+        ? '—'
+        : winners.length <= 2
+          ? winners.join(', ')
+          : `${winners[0]} +${winners.length - 1}`
+    return {
+      id,
+      name: t.metadata?.name || id,
+      icon: glyph.icon,
+      fg: glyph.c,
+      bg: alpha(glyph.rgb, 0.13),
+      border: alpha(glyph.rgb, 0.4),
+      holder
+    }
+  })
+
+  const finishersList = finishers.value
+
+  return {
+    scene,
+    showFire: scene === 0,
+    showSpeed: scene === 1,
+    showTrophies: scene === 2,
+    showFinishers: scene === 3,
+    sceneDots: Array.from({ length: scenes }, (_, i) => ({
+      bg: i === scene ? 'var(--sa-text-2)' : 'rgba(120,140,170,.3)',
+      w: i === scene ? 18 : 6
+    })),
+    slotBorder:
+      scene === 0
+        ? 'rgba(var(--sa-fire-bright-rgb),.32)'
+        : scene === 1
+          ? 'rgba(var(--sa-cyan-rgb),.32)'
+          : scene === 2
+            ? 'rgba(var(--sa-gold-rgb),.26)'
+            : 'rgba(var(--sa-mint-rgb),.34)',
+    slotBg:
+      scene === 0
+        ? 'linear-gradient(150deg,rgba(48,20,12,.6),rgba(var(--sa-bg-deep-rgb),.9))'
+        : scene === 1
+          ? 'linear-gradient(150deg,rgba(12,34,52,.6),rgba(var(--sa-bg-deep-rgb),.9))'
+          : scene === 2
+            ? 'linear-gradient(180deg,rgba(38,30,14,.45),rgba(var(--sa-bg-deep-rgb),.9))'
+            : 'linear-gradient(150deg,rgba(16,42,30,.55),rgba(var(--sa-bg-deep-rgb),.9))',
+    fireLeader,
+    fireRest,
+    speedLeader,
+    speedRest,
+    trophies,
+    finishersCount: finishersList.length,
+    finishersLeader: finishersList[0] || null,
+    finishersRest: finishersList.slice(1, 5)
+  }
+})
+
+/* ------------------------------------------------------------------ */
+/* Live feed                                                          */
+/* ------------------------------------------------------------------ */
+function methodStyle(m) {
+  if (m === 'GET') return ['var(--sa-cyan)', 'rgba(var(--sa-cyan-rgb),.16)']
+  if (m === 'POST') return ['var(--sa-mint)', 'rgba(var(--sa-mint-rgb),.16)']
+  if (m === 'DELETE') return ['var(--sa-danger)', 'rgba(var(--sa-danger-rgb),.16)']
+  return ['var(--sa-gold)', 'rgba(var(--sa-gold-rgb),.16)'] // PUT / other
+}
+
+function isDisplayablePayload(payload) {
+  if (typeof payload === 'string') return payload.length > 0
+  if (payload === null || payload === undefined) return false
+  if (typeof payload === 'object' && Object.keys(payload).length === 0) return false
+  return true
+}
+
+// Rows in the Live Feed show this many payload lines collapsed; the rest are
+// revealed by the per-row expand toggle (see LiveFeed.vue).
+export const PAYLOAD_PREVIEW_LINES = 2
+
+function payloadToLines(payload) {
+  if (typeof payload === 'string') {
+    return { keyCount: 1, isString: true, lines: [{ k: 'raw', v: payload }] }
+  }
+  const entries = Object.entries(payload)
+  return {
+    keyCount: entries.length,
+    isString: false,
+    lines: entries.map(([k, v]) => ({
+      k,
+      v: typeof v === 'object' ? JSON.stringify(v) : String(v)
+    }))
+  }
+}
+
+export const feed = computed(() => {
+  const su = searchUser.value.trim().toLowerCase()
+  const sl = searchUrl.value.trim().toLowerCase()
+
+  let src = notifications.value
+  if (su) src = src.filter((e) => (e.user || '').toLowerCase().includes(su))
+  if (sl)
+    src = src.filter((e) => {
+      const inUrl = (e.url || '').toLowerCase().includes(sl)
+      const inTool = (e.target_tool || '').toLowerCase().includes(sl)
+      const inPayload =
+        e.payload && typeof e.payload === 'object'
+          ? Object.entries(e.payload).some(([k, v]) => `${k}${v}`.toLowerCase().includes(sl))
+          : typeof e.payload === 'string'
+            ? e.payload.toLowerCase().includes(sl)
+            : false
+      return inUrl || inTool || inPayload
+    })
+
+  return src.map((e, i) => {
+    const isWebhook = e.notification_origin === 'webhook'
+    const method = isWebhook ? 'HOOK' : e.http_method
+    const [fg, bg] = methodStyle(e.http_method)
+    const hasPayload = isDisplayablePayload(e.payload)
+    const { name } = splitEmail(e.user)
+    const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
+    const expandable =
+      pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
+    return {
+      id: e.id,
+      user: name,
+      method,
+      methodFg: isWebhook ? 'var(--sa-violet)' : fg,
+      methodBg: isWebhook ? 'rgba(var(--sa-violet-rgb),.16)' : bg,
+      url: isWebhook ? e.target_tool : e.url,
+      rowBg: i === 0 ? 'rgba(var(--sa-cyan-rgb),.06)' : 'rgba(var(--sa-cyan-rgb),.02)',
+      rowBorder: i === 0 ? 'rgba(var(--sa-cyan-rgb),.18)' : 'rgba(var(--sa-cyan-rgb),.06)',
+      hasPayload,
+      keyCount: pl.keyCount,
+      payloadLines: pl.lines,
+      payloadIsString: pl.isString,
+      expandable
+    }
+  })
+})
+
+export const feedEmpty = computed(() => feed.value.length === 0)
+export const messages = notificationCounter
+export const apiMessages = notificationAPICounter
+
+/* ------------------------------------------------------------------ */
+/* 20-min activity timeline                                           */
+/* ------------------------------------------------------------------ */
+export const timeline = computed(() => {
+  // One bar per history bucket (5s each), so the chart advances in lockstep with
+  // the data — each update shifts every bar one slot left, a clean 20-min slide.
+  const buckets = Array.from(notificationHistory.value || [])
+  const tlMax = Math.max(1, ...buckets)
+  // Soft bars: a top-down cyan gradient per bucket, a faint stub for empty ones,
+  // and a brighter glowing bar at the leading (now) edge.
+  const bars = buckets.map((v, i) => {
+    const isNow = i === buckets.length - 1
+    return {
+      h: Math.round((v / tlMax) * 100),
+      bg: isNow
+        ? 'linear-gradient(180deg,var(--sa-cyan),rgba(var(--sa-cyan-rgb),.45))'
+        : v === 0
+          ? 'rgba(var(--sa-cyan-rgb),.1)'
+          : 'linear-gradient(180deg,rgba(var(--sa-cyan-rgb),.85),rgba(var(--sa-cyan-rgb),.22))',
+      glow: isNow ? '0 0 7px rgba(var(--sa-cyan-rgb),.75)' : 'none'
+    }
+  })
+  return {
+    bars,
+    tlNow: buckets[buckets.length - 1] || 0,
+    tlMax,
+    windowMin: notificationHistoryConfig.value?.buffer_timestamp_min || 20
+  }
+})

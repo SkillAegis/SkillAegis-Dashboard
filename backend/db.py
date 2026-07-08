@@ -17,6 +17,12 @@ EXERCISES_STATUS = {}
 NOTIFICATION_BUFFER_SIZE = 30
 NOTIFICATION_MESSAGES = collections.deque([], NOTIFICATION_BUFFER_SIZE)
 
+# Per-user event history for the player drill-down drawer — a deeper ring than
+# the global NOTIFICATION_MESSAGES above, kept per user_id so a trainer can
+# review one participant's recent request/webhook events (get_user_events).
+PER_USER_NOTIFICATION_BUFFER_SIZE = 50
+USER_NOTIFICATION_MESSAGES = {}  # user_id -> deque(maxlen=…), newest first
+
 NOTIFICATION_HISTORY_BUFFER_RESOLUTION_PER_MIN = 12
 NOTIFICATION_HISTORY_BUFFER_TIMESPAN_MIN = 20
 NOTIFICATION_HISTORY_FREQUENCY = 60 / NOTIFICATION_HISTORY_BUFFER_RESOLUTION_PER_MIN
@@ -34,6 +40,16 @@ user_activity_buffer_size = USER_ACTIVITY_BUFFER_RESOLUTION_PER_MIN * USER_ACTIV
 def resetNotificationMessage():
    global NOTIFICATION_MESSAGES
    NOTIFICATION_MESSAGES = collections.deque([], NOTIFICATION_BUFFER_SIZE)
+
+def resetUserNotificationMessages():
+   global USER_NOTIFICATION_MESSAGES
+   USER_NOTIFICATION_MESSAGES = {}
+
+def addUserNotification(user_id: int, notification: dict):
+   global USER_NOTIFICATION_MESSAGES
+   if user_id not in USER_NOTIFICATION_MESSAGES:
+      USER_NOTIFICATION_MESSAGES[user_id] = collections.deque([], PER_USER_NOTIFICATION_BUFFER_SIZE)
+   USER_NOTIFICATION_MESSAGES[user_id].appendleft(notification)
 
 def resetNotificationHistory():
    global NOTIFICATION_HISTORY

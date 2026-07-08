@@ -6,6 +6,7 @@ import functools
 import json
 import argparse
 import os
+import re
 import signal
 import subprocess
 import atexit
@@ -94,19 +95,45 @@ zsocket.setsockopt_string(zmq.SUBSCRIBE, '')
 # Initialize Socket.IO server
 app = web.Application()
 secret_key = base64.urlsafe_b64decode(base64.urlsafe_b64encode(os.urandom(32)))
-setup_session(app, EncryptedCookieStorage(secret_key))
-sio = socketio.AsyncServer(cors_allowed_origins='*', async_mode='aiohttp')
+# Session cookie hardening.
+# - `secure` is opt-in via config: SkillAegis is commonly served over plain HTTP
+#   on a trusted LAN (see start.sh), where a Secure cookie set over http:// on a
+#   non-localhost host is silently dropped by the browser, making login appear to
+#   fail. Enable `session_cookie_secure` only when serving over HTTPS (directly or
+#   behind a TLS-terminating proxy).
+# - SameSite=Strict keeps the session cookie from riding cross-site requests
+#   (CSRF / cross-site WebSocket hijacking of admin actions). The dev flow
+#   (Vite :5173 -> backend :4001) is same-site, so it keeps working.
+setup_session(app, EncryptedCookieStorage(
+    secret_key,
+    secure=getattr(config, "session_cookie_secure", False),
+    httponly=True,
+    samesite=getattr(config, "session_cookie_samesite", "Strict"),
+))
+# Socket.IO CORS. Default '*' preserves the existing behaviour: it is needed for
+# the dev flow (Vite :5173 talking to the backend :4001) and is harmless for
+# same-origin production, where the backend also serves the built dashboard. With
+# SameSite=Strict on the session cookie, a cross-origin page cannot ride an
+# admin's session regardless of this value; pin `allowed_origins` in config (a
+# list of origins) as defense-in-depth if SkillAegis is ever exposed beyond a
+# trusted network.
+sio = socketio.AsyncServer(
+    cors_allowed_origins=getattr(config, "allowed_origins", None) or '*',
+    async_mode='aiohttp',
+)
 sio.attach(app)
+
+
+# Any localhost port in DEBUG — Vite auto-increments off :5173 when it's taken.
+DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
 
 @web.middleware
 async def cors_middleware(request, handler):
-    ALLOWED_ORIGINS = {"http://localhost:5173"} if DEBUG else {}
-
     response = await handler(request)
     if DEBUG:
         origin = request.headers.get("Origin")
-        if origin in ALLOWED_ORIGINS:
+        if origin and DEV_ORIGIN_RE.match(origin):
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Access-Control-Allow-Credentials"] = "true"
             response.headers["Access-Control-Allow-Headers"] = "Content-Type"
@@ -133,8 +160,42 @@ async def auth_middleware(request, handler):
 
     return await handler(request)
 
+
+# Security response headers for the production dashboard, which this server serves
+# from WEB_DIST_DIR. The dev flow is unaffected: under `npm run dev` the document is
+# served by Vite (:5173), so its headers come from Vite, not from here.
+# CSP notes:
+# - style-src allows 'unsafe-inline' because Vue injects component <style> blocks and
+#   :style bindings at runtime, which a nonce cannot cover.
+# - font-src 'self' assumes the fonts are self-hosted (no Google Fonts CDN link in
+#   index.html); see the companion fonts fix.
+# - connect-src 'self' covers the same-origin Socket.IO transports (HTTP polling +
+#   WebSocket) in a production build, where the client uses a relative URL.
+CONTENT_SECURITY_POLICY = "; ".join((
+    "default-src 'self'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+))
+
+
+@web.middleware
+async def security_headers_middleware(request, handler):
+    response = await handler(request)
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
+
 app.middlewares.append(cors_middleware)
 app.middlewares.append(auth_middleware)
+app.middlewares.append(security_headers_middleware)
 
 
 async def is_authenticated(sid) -> tuple:
@@ -203,7 +264,7 @@ async def login(request):
 async def logout(request):
     session = await get_session(request)
     session.invalidate()
-    raise web.HTTPFound("/login")
+    return web.json_response({"success": True})
 
 
 @sio.event
@@ -243,6 +304,12 @@ async def get_users_stats(sid):
 @sio.event
 async def get_notifications(sid):
     return notification_model.get_notifications()
+
+@sio.event
+async def get_user_events(sid, data):
+    # Per-user event history for the drill-down drawer. Ungated, matching
+    # get_notifications above — the drawer is a read-only monitor for all viewers.
+    return notification_model.get_user_events(int(data['user_id']))
 
 @sio.event
 @require_auth
@@ -519,7 +586,7 @@ async def backup_exercises_progress():
 
 
 def start_sandbox_agent():
-    bin_path = os.path.abspath("./venv/bin/python3")
+    bin_path = sys.executable
     script_path = os.path.abspath("./backend/sandboxAgent.py")
     process = subprocess.Popen(
         [bin_path, script_path],
@@ -684,4 +751,5 @@ app.router.add_get('/', index)
 app.router.add_get('/favicon.ico', favicon)
 app.router.add_post('/webhook', webhook)
 app.router.add_post('/login', login)
+app.router.add_post('/logout', logout)
 app.router.add_route("OPTIONS", "/{tail:.*}", options_handler)

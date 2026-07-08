@@ -11,3 +11,19 @@ exercise_directory = '../scenarios'
 
 admin_email = None
 admin_password = None
+
+# --- Session cookie security ---
+# Mark the session cookie as Secure (only sent over HTTPS). Set to True when
+# SkillAegis is served over HTTPS, directly or behind a TLS-terminating proxy.
+# Leave False when serving over plain HTTP (e.g. on a trusted LAN), otherwise the
+# browser drops the cookie on non-localhost hosts and login silently fails.
+session_cookie_secure = False
+# SameSite policy for the session cookie: 'Strict' (recommended), 'Lax' or 'None'.
+# 'None' requires session_cookie_secure = True.
+session_cookie_samesite = 'Strict'
+
+# --- Socket.IO CORS ---
+# Browser origins allowed to open a Socket.IO connection. None (default) allows
+# any origin ('*'), which the dev flow relies on. Pin to an explicit list, e.g.
+# ['https://skillaegis.example.org'], if the dashboard is ever exposed publicly.
+allowed_origins = None
