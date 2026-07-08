@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phases 0–5 ✅ (Phase 5: drawer event-history outcome badges — ✓ completed / checked N + expand + per-check Debug — joining userEvents↔userEvaluations by notification_id, verified on the mock) — building phase 6 |
+| **Status** | ✅ Complete — all phases done. Phase 6 (real backend capture, MISP + webhook) makes the live engine emit the frozen contract the mock faked: routers thread `debug=True` and stop discarding the trace, `check_active_tasks` assembles one `EvaluationAttempt` per action into `db.USER_EVALUATION_ATTEMPTS`, stamps compact provenance on cleared completions, and emits `get_user_evaluations` / `user_evaluation_recorded` / `notification_outcome`; provenance stripped from `backup.json`. Verified offline (83 checks on the real eval path via real jq + 10 on the live Socket.IO server). |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -225,7 +225,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 | 3 | Live Feed completion pip | Frontend | Small | Low | ✅ Done (e8515f5) |
 | 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ✅ Done (cfc340b) |
 | 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ✅ Done (239d160) |
-| 6 | Real backend capture (MISP + webhook) | Backend | Large | Med | ☐ |
+| 6 | Real backend capture (MISP + webhook) | Backend | Large | Med | ✅ Done (392e5247) |
 
 Phase 0 gates the rest. Phases 1–5 build and ship against the **mock**, so the whole UI is
 demoable before the live engine is touched; the contract is frozen in Phase 1 (kept faithful to the
@@ -487,6 +487,10 @@ still works.
 
 ### Phase 6 — Real backend capture (MISP + webhook)
 
+**Status: ✅ Done — 392e5247.** The live evaluation engine now emits the frozen
+Phase-1 contract the mock faked, so the four UI surfaces work against the real
+backend unchanged. No `src/` or `dist/` change — Phase 6 is backend-only.
+
 Make the live engine emit what the mock has been faking.
 
 **Build.**
@@ -507,3 +511,51 @@ completions carry correct provenance; buffer A holds the last X attempts per use
 pass/fail traces; the four UI surfaces work against the **real** backend exactly as they did on the
 mock; no regression to scoring, the feed, or the leaderboard; `debug=True` triggers no extra MISP or
 sandbox calls beyond the normal path.
+
+**As built.**
+- **New `backend/provenance.py`** owns the capture side: the `INJECT_EVAL_SUCCESS/FAIL` codes; the
+  `EvaluationAttempt` / check / evaluation / trigger / compact-provenance record builders; buffer-A
+  push (`record_attempt`) + the `get_user_evaluations` read; the `query_mirror` synthesized trace; and
+  the **single** place large dumps are bounded *at capture time* — `data_meta_for` attaches a
+  size/shape header and, over `DATA_DUMP_CAP_BYTES` (16 KB), replaces the value with a bounded preview
+  **string** (`truncated:true` + an honest "truncated at capture" note); python `stdout`/`stderr` are
+  capped too. So a 20-attempt-per-user ring can never hold multi-MB MISP events.
+- **Routers thread `debug`** (`target_tools/{misp,webhook,suricata}/exercise.py`,
+  `misp/inject_eval.py`): each returns `(success, debug_steps)` when `debug=True` (unchanged bool path
+  otherwise). The webhook router **stops discarding** its data_filtering/python trace (was
+  `outcome, d = …`); `eval_query_mirror` — a pure equality check with no native trace — returns the
+  synthesized "Comparing…" + match/mismatch group. suricata is out of scope: it accepts `debug` for
+  signature parity and returns an empty trace, and `check_inject` contributes **no** check for it.
+- **`backend/exercise.py`** — `check_inject` now returns `(completed, check)`; the pass/fail/join
+  decision (AND short-circuits on first failure, OR on first success, `UNDEFINED` = all-must-pass with
+  no short-circuit) is **byte-for-byte the pre-provenance logic**, only refactored to a single
+  post-loop `mark_task_completed`. `check_active_tasks` assembles **one** `EvaluationAttempt` per action
+  aggregating every available task it checked (each check carrying its evaluations' traces), pushes it
+  into `db.USER_EVALUATION_ATTEMPTS[user_id]` (bounded, newest-first), stamps compact durable
+  `provenance` on each newly-cleared completion entry, then emits `user_evaluation_recorded` and —
+  only when a task cleared — `notification_outcome` (completed-only feed). The **timed-inject** path
+  records per-user attempts attributed to a synthesized timed trigger (`origin:'timed'`, no
+  `notification_id` → no feed pip / `notification_outcome`). `provenance` is **stripped from
+  `EXERCISES_STATUS` before `backup.json` is written** (`_exercises_status_for_backup`, no live-state
+  mutation), and buffer A is cleared on `resetAll` / `resetAllExerciseProgress` — all eval data is
+  memory-only, so after a restore-from-backup completions read "cleared by — (provenance not
+  retained)".
+- **`backend/server.py`** — a `get_user_evaluations` Socket.IO ack (ungated, mirroring
+  `get_user_events`); `sendUserEvaluationRecorded` / `sendNotificationOutcome` emit helpers; and the
+  triggering `notification` (its `id` + compact trigger) is threaded from `handleMessage` /
+  `handleWebhook` into the eval call so the attempt/provenance/feed-pip all key off the real feed row.
+  A MISP action whose notification wasn't feed-accepted still records the attempt (best-effort merge —
+  the pip/surface-3 badge simply go unshown, the durable "cleared by" line still works). **No new
+  MISP/sandbox fetches**: `debug=True` only surfaces data the engine already computes.
+- **`backend/db.py`** — `USER_EVALUATION_ATTEMPTS` buffer A (`ATTEMPT_BUFFER_SIZE=20`, per-user
+  newest-first deque) + `addUserEvaluationAttempt` / `resetUserEvaluationAttempts`.
+- **Verified offline** (no MISP/ZMQ instance needed): **83** checks driving the *real*
+  `check_active_tasks → check_inject →` webhook `data_filtering` router `→` real-`jq`
+  `eval_data_filtering`, asserting every attempt / check / evaluation / trigger / provenance /
+  `notification_outcome` field against the frozen contract — passing + failing traces, over-cap
+  bounded-preview, `query_mirror` synth, python `stdout` bounding, the buffer-A cap, backup stripping,
+  and `get_progress` carrying provenance; plus **10** checks booting the *real* Socket.IO server with
+  a socket client (`get_user_evaluations` ack + the `user_evaluation_recorded` / `notification_outcome`
+  pushes travel over the wire with the correct shapes). A full replay against a live MISP
+  (`--zmq_log_file`) is the remaining human-in-the-loop acceptance step — the emitted shapes are
+  byte-identical to the mock the four surfaces were already verified against in Phases 3–5.
