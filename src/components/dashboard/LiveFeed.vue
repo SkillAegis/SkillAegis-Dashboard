@@ -26,6 +26,8 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('keydown', onKey)
+  clearTimeout(userTimer)
+  clearTimeout(urlTimer)
 })
 
 // Per-row payload expand state, keyed by stable feed id so a row stays expanded
@@ -36,6 +38,27 @@ function toggleRow(id) {
   if (expandedRows.has(id)) expandedRows.delete(id)
   else expandedRows.add(id)
 }
+
+// Debounce the feed searches: inputs bind to these local refs (instant echo);
+// the shared searchUser/searchUrl the heavy `feed` computed reads update ~200ms
+// after the last keystroke, so it doesn't recompute on every character.
+const SEARCH_DEBOUNCE_MS = 200
+const searchUserInput = ref(searchUser.value)
+const searchUrlInput = ref(searchUrl.value)
+let userTimer = null
+let urlTimer = null
+watch(searchUserInput, (v) => {
+  clearTimeout(userTimer)
+  userTimer = setTimeout(() => {
+    searchUser.value = v
+  }, SEARCH_DEBOUNCE_MS)
+})
+watch(searchUrlInput, (v) => {
+  clearTimeout(urlTimer)
+  urlTimer = setTimeout(() => {
+    searchUrl.value = v
+  }, SEARCH_DEBOUNCE_MS)
+})
 
 // Animate the activity timeline as a horizontal slide rather than per-bar height
 // growth. Each update shifts the series one bucket left, so we render the new
@@ -61,7 +84,7 @@ watch(
 </script>
 
 <template>
-  <div class="sa-feed">
+  <div class="sa-feed" :class="{ 'sa-feed--offline': connectionHealth.state === 'offline' }">
     <div style="display:flex;align-items:center;gap:12px;padding:11px 16px 9px;border-bottom:1px solid rgba(var(--sa-cyan-rgb),.1);">
       <span style="font-size:14px;font-weight:700;letter-spacing:1.5px;color:var(--sa-text-2);">LIVE FEED</span>
       <span
@@ -178,11 +201,11 @@ watch(
     <div style="display:flex;gap:10px;padding:9px 16px;">
       <div style="flex:1;display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;background:rgba(var(--sa-bg-rgb),.7);border:1px solid rgba(var(--sa-cyan-rgb),.16);">
         <span style="font-size:12px;color:var(--sa-text-6);">⌕</span>
-        <input v-model="searchUser" placeholder="Find user" class="sa-input" />
+        <input v-model="searchUserInput" placeholder="Find user" class="sa-input" />
       </div>
       <div style="flex:1.4;display:flex;align-items:center;gap:8px;padding:7px 11px;border-radius:9px;background:rgba(var(--sa-bg-rgb),.7);border:1px solid rgba(var(--sa-cyan-rgb),.16);">
         <span style="font-size:12px;color:var(--sa-text-6);">⌕</span>
-        <input v-model="searchUrl" placeholder="Find URL or payload" class="sa-input" />
+        <input v-model="searchUrlInput" placeholder="Find URL or payload" class="sa-input" />
       </div>
     </div>
 
@@ -230,6 +253,25 @@ watch(
   border-radius: 16px;
   background: linear-gradient(180deg, rgba(14, 22, 38, 0.92), rgba(9, 15, 26, 0.92));
   overflow: hidden;
+  transition: border-color 0.35s ease, box-shadow 0.35s ease;
+}
+/* Offline — the whole panel turns to a red hazard-striped ground so a dropped
+   socket reads from across the room. Static by design (no motion); driven purely
+   off connectionHealth.state === 'offline', alongside the header dot + label. */
+.sa-feed--offline {
+  border-color: rgba(var(--sa-danger-rgb), 0.42);
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--sa-danger-rgb), 0.075) 0,
+      rgba(var(--sa-danger-rgb), 0.075) 13px,
+      rgba(var(--sa-danger-rgb), 0) 13px,
+      rgba(var(--sa-danger-rgb), 0) 28px
+    ),
+    linear-gradient(180deg, rgba(32, 14, 19, 0.94), rgba(20, 9, 13, 0.95));
+  box-shadow:
+    inset 0 0 0 1px rgba(var(--sa-danger-rgb), 0.1),
+    0 0 22px rgba(var(--sa-danger-rgb), 0.08);
 }
 .sa-input {
   flex: 1;
