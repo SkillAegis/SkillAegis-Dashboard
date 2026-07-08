@@ -424,7 +424,7 @@ function sendRemediateSetting(setting, cb) {
     name: setting
   }
   socket.emit('remediate_setting', payload, (result) => {
-    emitReplyHandler(reply)
+    emitReplyHandler(result)
     cb(result)
   })
 }
