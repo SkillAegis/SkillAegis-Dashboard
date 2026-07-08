@@ -560,6 +560,26 @@ export function openTaskEvaluation(taskUuid) {
   })
 }
 
+// Surface 3 (Phase 5): open the full captured trace for one check of an
+// event-history row — the event↔attempt join (selectedPlayerEvents) resolved the
+// attempt from buffer A, so this looks it up the same way and picks the check by
+// inject_uuid (falling back to the first check). The badge and this control both
+// read buffer A, so if the attempt is still shown it is still resolvable; the
+// trace is always fully retained here (a rolled-out attempt carries no badge).
+export function openEventEvaluation(attemptId, injectUuid) {
+  const attempt = userEvaluations.value.find((a) => a.id === attemptId)
+  if (!attempt) return
+  const checks = attempt.checks || []
+  const check = checks.find((ck) => ck.inject_uuid === injectUuid) || checks[0]
+  if (!check) return
+  openEvaluation({
+    check,
+    trigger: attempt.trigger,
+    targetTool: attempt.target_tool || '',
+    traceRetained: true
+  })
+}
+
 // Live status chips for the drawer header, mapped from the same
 // progresses[user_id].status the leaderboard already consumes. The three fixed
 // badges carry preset token colours; each collected trophy borrows its glyph +
@@ -864,10 +884,62 @@ function eventMatches(e, q) {
   return false
 }
 
+// Surface 3 (Phase 5): the per-event outcome badge, derived from the captured
+// attempt joined onto this event by notification_id. `completed_any` → a single
+// "✓ completed <task>" badge (first cleared task + "+N"), opening the passing
+// trace. Otherwise → an expandable "checked N task(s)" badge whose rows carry each
+// checked task's pass/fail + inject `result` label + AND/OR join, each opening its
+// own trace. `null` for an un-evaluated event (or one whose attempt has rolled out
+// of buffer A) → no badge. Attempt id + inject_uuid ride along so the Debug control
+// re-resolves the same check from buffer A (see openEventEvaluation).
+function buildEvalOutcome(attempt) {
+  if (!attempt) return null
+  const checks = Array.isArray(attempt.checks) ? attempt.checks : []
+  if (attempt.completed_any) {
+    // Prefer the checks actually cleared on this action; fall back to all checks
+    // so a completed attempt always names something even if the flags disagree.
+    const done = checks.filter((c) => c.completed_now)
+    const named = done.length ? done : checks
+    const first = named[0]
+    const extra = named.length - 1
+    return {
+      kind: 'completed',
+      label: (first?.inject_name || 'a task') + (extra > 0 ? ` +${extra}` : ''),
+      title: 'Completed: ' + named.map((c) => c.inject_name).join(', '),
+      attemptId: attempt.id,
+      injectUuid: first?.inject_uuid
+    }
+  }
+  return {
+    kind: 'checked',
+    count: checks.length,
+    countLabel: `checked ${checks.length} task${checks.length === 1 ? '' : 's'}`,
+    checks: checks.map((c) => ({
+      pass: c.outcome === EVAL_OUTCOME_SUCCESS,
+      name: c.inject_name,
+      resultLabel: c.result_label,
+      joinType: c.join_type,
+      attemptId: attempt.id,
+      injectUuid: c.inject_uuid
+    }))
+  }
+}
+
 export const selectedPlayerEvents = computed(() => {
   if (selectedPlayerId.value === null) return null
   const q = eventSearch.value.trim().toLowerCase()
   const src = q ? userEvents.value.filter((e) => eventMatches(e, q)) : userEvents.value
+
+  // Join captured attempts (buffer A) onto the events by notification_id — the
+  // outcome badge source (surface 3). Bounded to retained attempts: an event whose
+  // attempt has rolled out of buffer A (or was never evaluated) gets no badge.
+  // First attempt wins per id (buffer A is newest-first; an id maps to one action).
+  const byNid = new Map()
+  for (const a of userEvaluations.value) {
+    const nid = a?.trigger?.notification_id
+    if (nid !== undefined && nid !== null && !byNid.has(nid)) byNid.set(nid, a)
+  }
+
   return src.map((e) => {
     const isWebhook = e.notification_origin === 'webhook'
     const method = isWebhook ? 'HOOK' : e.http_method
@@ -888,7 +960,8 @@ export const selectedPlayerEvents = computed(() => {
       hasPayload,
       payloadIsString: pl.isString,
       payloadLines: preview,
-      moreCount: more > 0 ? more : 0
+      moreCount: more > 0 ? more : 0,
+      evalOutcome: buildEvalOutcome(byNid.get(e.id))
     }
   })
 })

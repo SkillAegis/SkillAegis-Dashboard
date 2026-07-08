@@ -18,6 +18,7 @@
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import {
   selectedPlayer,
+  selectedPlayerId,
   selectedPlayerTasks,
   selectedPlayerActivity,
   selectedPlayerEvents,
@@ -25,6 +26,7 @@ import {
   eventSearch,
   closePlayer,
   openTaskEvaluation,
+  openEventEvaluation,
   activeEvaluation,
   closeEvaluation
 } from './dashboardState.js'
@@ -39,6 +41,22 @@ const eventsTotal = selectedPlayerEventsTotal
 const search = eventSearch
 const evaluation = activeEvaluation
 const open = computed(() => player.value !== null)
+
+// Surface 3 (Phase 5): which "checked N task(s)" event rows are expanded to their
+// per-task pass/fail list. Keyed by event id (notification_id); local UI state,
+// reset when the drawer moves to another player so it never carries across.
+const expandedEvents = ref(new Set())
+function isEventExpanded(id) {
+  return expandedEvents.value.has(id)
+}
+function toggleEventExpand(id) {
+  const next = new Set(expandedEvents.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedEvents.value = next
+}
+watch(selectedPlayerId, () => {
+  expandedEvents.value = new Set()
+})
 
 // Events-rail filter state: whether a query is active, and the header sub-line
 // (shows "N of M" while filtering so it's clear the buffer is deeper than shown).
@@ -365,6 +383,56 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                     </div>
                     <div v-if="e.moreCount" class="sa-ev-more sa-mono">▸ {{ e.moreCount }} more</div>
                   </template>
+                </div>
+                <!-- Surface 3: per-event outcome badge — "✓ completed <task>" or
+                     an expandable "checked N task(s)"; un-evaluated rows carry none.
+                     Debug opens the captured trace in EvaluationDebug. -->
+                <div v-if="e.evalOutcome" class="sa-ev-out">
+                  <template v-if="e.evalOutcome.kind === 'completed'">
+                    <span class="sa-badge sa-badge-done sa-mono" :title="e.evalOutcome.title">
+                      <span class="ck">✓</span> completed {{ e.evalOutcome.label }}
+                    </span>
+                    <button
+                      type="button"
+                      class="sa-ev-dbg sa-mono"
+                      @click="openEventEvaluation(e.evalOutcome.attemptId, e.evalOutcome.injectUuid)"
+                    >
+                      Debug
+                    </button>
+                  </template>
+                  <button
+                    v-else
+                    type="button"
+                    class="sa-badge sa-badge-check sa-mono"
+                    :aria-expanded="isEventExpanded(e.id)"
+                    @click="toggleEventExpand(e.id)"
+                  >
+                    <span class="chev">{{ isEventExpanded(e.id) ? '▾' : '▸' }}</span>
+                    {{ e.evalOutcome.countLabel }}
+                  </button>
+                </div>
+                <div
+                  v-if="e.evalOutcome && e.evalOutcome.kind === 'checked' && isEventExpanded(e.id)"
+                  class="sa-checklist"
+                >
+                  <div v-for="(c, ci) in e.evalOutcome.checks" :key="ci" class="sa-crow">
+                    <span class="sa-cmark" :class="c.pass ? 'sa-cmark-pass' : 'sa-cmark-fail'">{{
+                      c.pass ? '✓' : '✕'
+                    }}</span>
+                    <div class="sa-cn">
+                      <div class="nm" :title="c.name">{{ c.name }}</div>
+                      <div class="rl sa-mono">
+                        result: <b>{{ c.resultLabel }}</b> · {{ c.joinType }}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="sa-cdbg sa-mono"
+                      @click="openEventEvaluation(c.attemptId, c.injectUuid)"
+                    >
+                      Debug
+                    </button>
+                  </div>
                 </div>
               </div>
             </template>
@@ -1088,6 +1156,153 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
 .sa-ev-hook {
   font-size: 11px;
   color: #d9c690;
+}
+
+/* event-history outcome badges (surface 3) — ported from the signed-off mockup.
+   Interactive badges/controls are <button>s here (keyboard-operable), so they set
+   their own background/border/cursor and pick up the mono face from .sa-mono. */
+.sa-ev-out {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.sa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.sa-badge-done {
+  color: #d7f7e6;
+  background: rgba(var(--sa-mint-rgb), 0.13);
+  border: 1px solid rgba(var(--sa-mint-rgb), 0.4);
+}
+.sa-badge-done .ck {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--sa-ink);
+  background: var(--sa-mint);
+}
+.sa-badge-check {
+  color: var(--sa-text-3);
+  background: rgba(var(--sa-cyan-rgb), 0.08);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.24);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-badge-check:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.14);
+  border-color: rgba(var(--sa-cyan-rgb), 0.4);
+}
+.sa-badge-check .chev {
+  color: var(--sa-text-5);
+  font-size: 9px;
+}
+.sa-ev-dbg {
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), 0.09);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.26);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-ev-dbg:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
+  border-color: rgba(var(--sa-cyan-rgb), 0.5);
+}
+.sa-badge-check:focus-visible,
+.sa-ev-dbg:focus-visible,
+.sa-cdbg:focus-visible {
+  outline: 2px solid var(--sa-cyan);
+  outline-offset: 2px;
+}
+
+/* expanded checked-task list */
+.sa-checklist {
+  margin-top: 8px;
+  border-top: 1px dashed rgba(var(--sa-cyan-rgb), 0.14);
+  padding-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sa-crow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sa-cmark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 900;
+}
+.sa-cmark-pass {
+  color: var(--sa-ink);
+  background: var(--sa-mint);
+}
+.sa-cmark-fail {
+  color: #ffe3e3;
+  background: rgba(var(--sa-danger-rgb), 0.28);
+  border: 1px solid rgba(var(--sa-danger-rgb), 0.6);
+}
+.sa-cn {
+  flex: 1;
+  min-width: 0;
+}
+.sa-cn .nm {
+  font-size: 12px;
+  color: var(--sa-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sa-cn .rl {
+  font-size: 10px;
+  color: var(--sa-text-5);
+  margin-top: 1px;
+}
+.sa-cn .rl b {
+  color: var(--sa-text-4);
+  font-weight: 600;
+}
+.sa-cdbg {
+  cursor: pointer;
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(var(--sa-cyan-rgb), 0.08);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.24);
+  transition: background 0.15s;
+}
+.sa-cdbg:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
 }
 
 /* transitions — slide (default) / fade (reduced motion) + backdrop fade */
