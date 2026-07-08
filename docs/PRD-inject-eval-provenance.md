@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Phases 0–4 ✅ (Phase 4: drawer completed-task "cleared by" provenance + View evaluation opening EvaluationDebug, verified on the mock) — building phases 5–6 |
+| **Status** | Phases 0–5 ✅ (Phase 5: drawer event-history outcome badges — ✓ completed / checked N + expand + per-check Debug — joining userEvents↔userEvaluations by notification_id, verified on the mock) — building phase 6 |
 | **Date** | 2026-07-06 |
 | **Scope** | SkillAegis-Dashboard, full-stack. **Backend** eval path + retention (`backend/exercise.py`, `backend/target_tools/{misp,webhook}/*`, `backend/utils.py`, `backend/db.py`, `backend/server.py`), **frontend** (`src/socket.js`, `src/components/dashboard/*`, new `EvaluationDebug.vue`), and **mock** parity (`backend/dev_mock_server.py`, `CLAUDE.md`). |
 | **Non-goals** | No change to scoring math, the scenario/CEXF format, or which actions are *accepted* for evaluation. No change to the evaluation **semantics** (same engine, same pass/fail) — we only stop discarding the debug trace it already produces and record where a completion came from. **suricata** target tool is out of scope (its shell-out/pcap result has a different shape). The dashboard debug tool is a **read-only inspector of a captured attempt**, not a live re-runner like the Editor. |
@@ -224,7 +224,7 @@ in the progress snapshot, answer `get_user_evaluations`, push `user_evaluation_r
 | 2 | `EvaluationDebug.vue` — shared outcome+debug renderer | Frontend | Medium | Low | ✅ Done (a42ec9b) |
 | 3 | Live Feed completion pip | Frontend | Small | Low | ✅ Done (e8515f5) |
 | 4 | Drawer — completed-task provenance + View evaluation | Frontend | Medium | Low | ✅ Done (cfc340b) |
-| 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ☐ |
+| 5 | Drawer — event-history outcomes (badges + expand + Debug) | Frontend | Medium | Med | ✅ Done (239d160) |
 | 6 | Real backend capture (MISP + webhook) | Backend | Large | Med | ☐ |
 
 Phase 0 gates the rest. Phases 1–5 build and ship against the **mock**, so the whole UI is
@@ -435,6 +435,14 @@ trace; still shows the "cleared by" line when the attempt has rolled out of buff
 
 ### Phase 5 — Drawer: event-history outcomes
 
+**Status: ✅ Done — 239d160.** Each event row in the drawer's RECENT EVENTS rail carries an outcome
+badge joined from buffer A by `notification_id`: a mint **✓ completed `<task>`**, or a cyan,
+expandable **checked N task(s)** when the action was evaluated but cleared nothing. Expanding a
+"checked" row lists each checked task with a ✓/✕ pass-fail mark, its inject `result` label and AND/OR
+join, and a per-task **Debug** control; a completed row has a row-level **Debug**. All Debug controls
+open the shared `EvaluationDebug` overlay on the matching captured trace. Un-evaluated events (and
+events whose attempt has rolled out of buffer A) carry no badge. Verified E2E on the mock.
+
 Join `userEvents` ↔ `userEvaluations` by `notification_id` in `dashboardState.js`. Each event row
 gets **✓ completed `<task>`** or **checked N task(s)**; expanding a "checked" row lists each checked
 task (pass/fail + `result` label); a **Debug** control opens `EvaluationDebug`. Un-evaluated events
@@ -443,6 +451,37 @@ carry no badge.
 **Acceptance.** On the mock, completed and failed-check events are visually distinct; the expand
 lists the right tasks with correct pass/fail; Debug opens the matching trace; the in-rail search
 still works.
+
+**As built.**
+- **`dashboardState.js`** — `selectedPlayerEvents` builds a `notification_id → attempt` map from
+  `userEvaluations` (buffer A) and attaches an `evalOutcome` to each event row. `buildEvalOutcome`:
+  `completed_any` → `{kind:'completed', label:'<first cleared task> +N', title, attemptId, injectUuid}`
+  (names the checks with `completed_now`, falling back to all checks); otherwise
+  `{kind:'checked', countLabel:'checked N task(s)', checks:[{pass, name, resultLabel, joinType,
+  attemptId, injectUuid}]}` (pass = `outcome === SUCCESS`). `null` for an un-evaluated event or one
+  whose attempt has rolled out of the bounded buffer — so surface 3 is scoped to *retained* attempts
+  (the durable "cleared by" line is surface 2). New `openEventEvaluation(attemptId, injectUuid)`
+  re-resolves the attempt + check from buffer A and opens the shared overlay (`traceRetained` always
+  true — a rolled-out attempt shows no badge to click). The join lives after the search filter, so
+  the in-rail search is untouched.
+- **`PlayerDrawer.vue`** — renders the mint `.sa-badge-done` "✓ completed <task>" (with a row-level
+  `.sa-ev-dbg` Debug) or the cyan `.sa-badge-check` "checked N task(s)" (a `<button>` toggling the
+  per-row expand). Expanding shows the `.sa-checklist`: one `.sa-crow` per check with a ✓/✕
+  `.sa-cmark`, task name, `result: <label> · <AND|OR>`, and a per-check `.sa-cdbg` Debug. Expand state
+  is local UI state (a `Set` keyed by event id, reset when the drawer moves to another player).
+  Interactive badges/controls are keyboard-operable `<button>`s with focus-visible rings; surface-3
+  CSS ported verbatim from the signed-off mockup.
+- **dist/ rebuilt** — the drawer now ships surface 3 in the prod bundle.
+- **Verified E2E** on the frozen `--no-sim --seed 1` mock (headless Chrome/CDP): 25/25 checks on
+  agent03 — 5 completed + 3 checked (1+2+1) badges + 25 un-evaluated rows; the "checked 2 tasks" badge
+  expands to a 2-row checklist (both ✕, `IP-src attribute present · AND` and `Threat-actor galaxy
+  attached · OR`, each with its own Debug); the per-check Debug opens the matching **Failed** trace and
+  the completed-row Debug the **Successful** trace; Esc closes only the overlay (drawer stays); and the
+  in-rail search filters to matching rows with badges intact, then restores on clear. **Verify note:**
+  buffer A (`ATTEMPT_BUFFER_SIZE=20`) is bounded and `get_user_events` returns the deeper per-user ring
+  (50), so most events are un-evaluated / rolled-out and correctly carry no badge — the verify picks a
+  target user from the *current* world and asserts invariants (≥1 of each badge kind, ≥1 un-evaluated),
+  not fixed counts.
 
 ---
 
