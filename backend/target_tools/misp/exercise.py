@@ -28,30 +28,33 @@ def is_valid_evaluation_context(user_id: int, inject_evaluation: dict, data: dic
     return True
 
 
-async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict) -> bool:
+async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict, debug: bool = False) -> Union[bool, tuple]:
+    # When debug=True, every strategy returns (success, debug_steps) so the caller
+    # can capture the "why" trace it already computes and would otherwise discard
+    # (PRD-inject-eval-provenance). The non-debug path is unchanged (returns bool).
     if not is_valid_evaluation_context(user_id, inject_evaluation, data, context):
-        return False
+        return (False, []) if debug else False
 
     if 'evaluation_strategy' not in inject_evaluation:
         logger.warning('Evaluation strategy not specified in inject')
-        return False
+        return (False, []) if debug else False
 
     data_to_validate = await get_data_to_validate(user_id, inject_evaluation, data, context)
     if data_to_validate is None:
         logger.debug('Could not fetch data to validate')
-        return False
+        return (False, []) if debug else False
 
     if inject_evaluation['evaluation_strategy'] == 'data_filtering':
-        return eval_data_filtering(user_id, inject_evaluation, data_to_validate, context)
+        return eval_data_filtering(user_id, inject_evaluation, data_to_validate, context, debug=debug)
     elif inject_evaluation['evaluation_strategy'] == 'query_mirror':
         expected_data = data_to_validate['expected_data']
         data_to_validate = data_to_validate['data_to_validate']
-        return eval_query_mirror(user_id, expected_data, data_to_validate, context)
+        return eval_query_mirror(user_id, expected_data, data_to_validate, context, debug=debug)
     elif inject_evaluation['evaluation_strategy'] == 'query_search':
-        return eval_query_search(user_id, inject_evaluation, data_to_validate, context)
+        return eval_query_search(user_id, inject_evaluation, data_to_validate, context, debug=debug)
     elif inject_evaluation['evaluation_strategy'] == 'python':
-        return eval_python(user_id, inject_evaluation, data_to_validate, context)
-    return False
+        return eval_python(user_id, inject_evaluation, data_to_validate, context, debug=debug)
+    return (False, []) if debug else False
 
 
 async def get_data_to_validate(user_id: int, inject_evaluation: dict, data: dict, context: dict = {}) -> Union[dict, list, str, None]:

@@ -14,6 +14,7 @@ from backend.appConfig import logger
 import backend.config as config
 import backend.db as db
 import backend.leaderboard as leadboard
+import backend.provenance as provenance
 
 from backend.target_tools.misp.exercise import inject_checker_router as inject_checker_router_misp
 from backend.target_tools.suricata.exercise import inject_checker_router as inject_checker_router_suricata
@@ -50,10 +51,26 @@ def read_exercise_dir():
     return exercises
 
 
+def _exercises_status_for_backup() -> dict:
+    # Completion entries carry an ephemeral `provenance` key (the inject-eval clear
+    # origin, PRD-inject-eval-provenance) that must never reach backup.json — all
+    # eval data is memory-only. Rebuild EXERCISES_STATUS with that key stripped from
+    # every completion entry, without mutating the live state.
+    status = {}
+    for exercise_uuid, exercise_status in db.EXERCISES_STATUS.items():
+        tasks = {}
+        for task_uuid, task in exercise_status['tasks'].items():
+            completed_by_user = [provenance.strip_provenance(entry)
+                                 for entry in task['completed_by_user']]
+            tasks[task_uuid] = {**task, 'completed_by_user': completed_by_user}
+        status[exercise_uuid] = {**exercise_status, 'tasks': tasks}
+    return status
+
+
 def backup_exercises_progress():
     global LAST_BACKUP
     toBackup = {
-        "EXERCISES_STATUS": db.EXERCISES_STATUS,
+        "EXERCISES_STATUS": _exercises_status_for_backup(),
         "SELECTED_EXERCISES": db.SELECTED_EXERCISES,
         "USER_ID_TO_EMAIL_MAPPING": db.USER_ID_TO_EMAIL_MAPPING,
         "EMAIL_TO_USER_ID_MAPPING": db.EMAIL_TO_USER_ID_MAPPING,
@@ -97,6 +114,9 @@ def resetAll(wipeUsers=True):
         db.USER_ID_TO_EMAIL_MAPPING = {}
         db.EMAIL_TO_USER_ID_MAPPING = {}
         db.USER_ID_TO_AUTHKEY_MAPPING = {}
+    # Drop buffer A (inject-eval attempts) so no stale "why" traces or "cleared by"
+    # provenance survive a reset — all eval data is memory-only.
+    db.resetUserEvaluationAttempts()
     init_exercises_tasks()
 
 def reloadFromDisk():
@@ -233,6 +253,7 @@ def resetAllExerciseProgress():
         for exercise_status in db.EXERCISES_STATUS.values():
             for task in exercise_status['tasks'].values():
                 mark_task_incomplete(user_id, exercise_status['uuid'], task['uuid'])
+    db.resetUserEvaluationAttempts()
     backup_exercises_progress()
 
 
@@ -350,26 +371,70 @@ def get_users_stats() -> dict:
     return leadboard.get_user_stats(selected_exercices, completion_for_users)
 
 
+def _completion_entry(user_id: int, exercise_uuid: str, task_uuid: str) -> Union[dict, None]:
+    try:
+        entries = db.EXERCISES_STATUS[exercise_uuid]['tasks'][task_uuid]['completed_by_user']
+    except KeyError:
+        return None
+    for entry in entries:
+        if entry['user_id'] == user_id:
+            return entry
+    return None
+
+
 @debounce_check_active_tasks(debounce_seconds=2)
-async def check_active_tasks_debounced(user_id: int, data: dict, context: dict, for_target_tool: Union[str, None] = None) -> bool:
-    return await check_active_tasks(user_id, data, context, for_target_tool)
+async def check_active_tasks_debounced(user_id: int, data: dict, context: dict, for_target_tool: Union[str, None] = None, notification: Union[dict, None] = None) -> bool:
+    return await check_active_tasks(user_id, data, context, for_target_tool, notification=notification)
 
 
-async def check_active_tasks(user_id: int, data: dict, context: dict, for_target_tool: Union[str, None] = None) -> bool:
+async def check_active_tasks(user_id: int, data: dict, context: dict, for_target_tool: Union[str, None] = None, notification: Union[dict, None] = None) -> bool:
+    from backend.server import sendUserEvaluationRecorded, sendNotificationOutcome
+
     succeeded_once = False
     available_tasks = get_available_tasks_for_user(user_id)
+    checks = []
+    completed_injects = []
     for task_uuid in available_tasks:
         inject = db.INJECT_BY_UUID[task_uuid]
         if inject['exercise_uuid'] not in db.SELECTED_EXERCISES:
             continue
         logger.debug(f"[{task_uuid}] :: checking: {inject['name']}")
-        completed = await check_inject(user_id, inject, data, context, for_target_tool)
+        completed, check = await check_inject(user_id, inject, data, context, for_target_tool)
+        if check is not None:
+            checks.append(check)
         if completed:
             succeeded_once = True
+            completed_injects.append(inject)
+
+    # Record ONE EvaluationAttempt aggregating every task this action was checked
+    # against (each carrying its captured {outcome, debug} trace), stamp durable
+    # provenance on each newly-cleared completion, and light the feed pip
+    # (PRD-inject-eval-provenance). Only MISP/webhook checks are captured, so a
+    # suricata-only action contributes no checks and records no attempt.
+    if checks:
+        trigger = provenance.build_trigger(notification)
+        attempt = provenance.build_attempt(user_id, trigger, checks)
+        provenance.record_attempt(user_id, attempt)
+
+        completed_tasks_payload = []
+        for inject in completed_injects:
+            entry = _completion_entry(user_id, inject['exercise_uuid'], inject['uuid'])
+            check = next((c for c in attempt['checks'] if c['inject_uuid'] == inject['uuid']), None)
+            if entry is not None and check is not None:
+                entry['provenance'] = provenance.build_provenance(attempt, check)
+            completed_tasks_payload.append({
+                'uuid': inject['uuid'],
+                'name': inject.get('name', ''),
+                'first_completion': bool(entry.get('first_completion')) if entry else False,
+            })
+
+        await sendUserEvaluationRecorded(user_id, attempt)
+        if completed_tasks_payload and notification is not None:
+            await sendNotificationOutcome(notification.get('id'), user_id, completed_tasks_payload)
     return succeeded_once
 
 
-async def check_inject(user_id: int, inject: dict, data: dict, context: dict, for_target_tool: Union[str, None] = None) -> bool:
+async def check_inject(user_id: int, inject: dict, data: dict, context: dict, for_target_tool: Union[str, None] = None) -> tuple:
     from backend.server import sendUserInjectCheckInProgress
 
     inject_evaluation_join_type = inject.get('inject_evaluation_join_type', 'UNDEFINED')
@@ -381,31 +446,46 @@ async def check_inject(user_id: int, inject: dict, data: dict, context: dict, fo
     elif inject['target_tool'] == 'webhook' and inject['target_tool'] == for_target_tool:
         inject_checker_router = inject_checker_router_webhook
     else:
-        return False
+        return False, None
 
+    # suricata is out of scope for trace capture; the other tools contribute a check
+    # (the aggregated per-task record) to the action's EvaluationAttempt.
+    capture = inject['target_tool'] in ('MISP', 'webhook')
+
+    evaluations = []
+    completed = False
+    and_failure = False
     successCount = 0
     for inject_evaluation in inject['inject_evaluation']:
         await sendUserInjectCheckInProgress(user_id, inject['uuid'])
-        success = await inject_checker_router(user_id, inject_evaluation, data, context)
+        # debug=True returns (success, debug_steps): the engine already computes the
+        # trace; we simply stop discarding it. The pass/fail decision below is
+        # unchanged from the pre-provenance logic.
+        result = await inject_checker_router(user_id, inject_evaluation, data, context, debug=True)
+        success, debug_steps = result if isinstance(result, tuple) else (result, [])
+        if capture:
+            evaluations.append(provenance.build_evaluation_record(inject_evaluation, success, debug_steps))
         if not success and inject_evaluation_join_type == 'AND':
             logger.info(f"Task not completed[{user_id}]: {inject['uuid']}. failure of one inject and join type is `AND`")
-            return False
+            and_failure = True
+            break
         elif success:
             successCount += 1
-            if inject_evaluation_join_type == 'OR':
-                mark_task_completed(user_id, inject['exercise_uuid'], inject['uuid'])
-                logger.info(f"Task success[{user_id}]: {inject['uuid']}")
-                return True
-            elif successCount == len(inject['inject_evaluation']):
-                mark_task_completed(user_id, inject['exercise_uuid'], inject['uuid'])
-                logger.info(f"Task success[{user_id}]: {inject['uuid']}")
-                return True
-    logger.info(f"Task not completed[{user_id}]: {inject['uuid']}. failure of all injects")
-    return False
+            if inject_evaluation_join_type == 'OR' or successCount == len(inject['inject_evaluation']):
+                completed = True
+                break
+    if completed:
+        mark_task_completed(user_id, inject['exercise_uuid'], inject['uuid'])
+        logger.info(f"Task success[{user_id}]: {inject['uuid']}")
+    elif not and_failure:
+        logger.info(f"Task not completed[{user_id}]: {inject['uuid']}. failure of all injects")
+
+    check = provenance.build_check_record(inject, evaluations, completed) if capture else None
+    return completed, check
 
 
 async def check_inject_for_timed_inject(inject: dict, data: dict, context: dict) -> bool:
-    from backend.server import sendUserInjectCheckInProgress
+    from backend.server import sendUserInjectCheckInProgress, sendUserEvaluationRecorded
 
     inject_evaluation_join_type = inject.get('inject_evaluation_join_type', 'UNDEFINED')
     if inject['target_tool'] == 'MISP':
@@ -417,6 +497,9 @@ async def check_inject_for_timed_inject(inject: dict, data: dict, context: dict)
     else:
         return False
 
+    # A timed inject has no incoming feed action; its attempts are attributed to the
+    # timed trigger (no notification_id), so there is no feed pip / notification_outcome.
+    capture = inject['target_tool'] in ('MISP', 'webhook')
     at_last_one_success = False
     user_ids = list(db.USER_ID_TO_EMAIL_MAPPING.keys())
     for user_id in user_ids:
@@ -432,6 +515,7 @@ async def check_inject_for_timed_inject(inject: dict, data: dict, context: dict)
 
         successCount = 0
         completed = False
+        evaluations = []
         available_tasks = get_available_tasks_for_user(user_id)
         if inject['uuid'] not in available_tasks:
             continue
@@ -446,7 +530,10 @@ async def check_inject_for_timed_inject(inject: dict, data: dict, context: dict)
                     continue
 
             await sendUserInjectCheckInProgress(user_id, inject['uuid'])
-            success = await inject_checker_router(user_id, inject_evaluation, data, fullContext)
+            result = await inject_checker_router(user_id, inject_evaluation, data, fullContext, debug=True)
+            success, debug_steps = result if isinstance(result, tuple) else (result, [])
+            if capture:
+                evaluations.append(provenance.build_evaluation_record(inject_evaluation, success, debug_steps))
             if not success and inject_evaluation_join_type == 'AND':
                 mark_task_completed(user_id, inject['exercise_uuid'], inject['uuid'])
                 logger.info(f"Task success[{user_id}]: {inject['uuid']}")
@@ -468,4 +555,16 @@ async def check_inject_for_timed_inject(inject: dict, data: dict, context: dict)
             logger.info(f"Task not completed[{user_id}]: {inject['uuid']}. failure of all injects")
         else:
             at_last_one_success = True
+
+        # Record this user's timed-inject attempt (+ durable provenance on a clear).
+        if capture and evaluations:
+            trigger = provenance.build_timed_trigger(context)
+            check = provenance.build_check_record(inject, evaluations, completed)
+            attempt = provenance.build_attempt(user_id, trigger, [check], target_tool=inject['target_tool'])
+            provenance.record_attempt(user_id, attempt)
+            if completed:
+                entry = _completion_entry(user_id, inject['exercise_uuid'], inject['uuid'])
+                if entry is not None:
+                    entry['provenance'] = provenance.build_provenance(attempt, check)
+            await sendUserEvaluationRecorded(user_id, attempt)
     return at_last_one_success
