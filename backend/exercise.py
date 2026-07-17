@@ -53,9 +53,9 @@ def read_exercise_dir():
 
 def _exercises_status_for_backup() -> dict:
     # Completion entries carry an ephemeral `provenance` key (the inject-eval clear
-    # origin, PRD-inject-eval-provenance) that must never reach backup.json — all
-    # eval data is memory-only. Rebuild EXERCISES_STATUS with that key stripped from
-    # every completion entry, without mutating the live state.
+    # origin) that must never reach backup.json — all eval data is memory-only.
+    # Rebuild EXERCISES_STATUS with that key stripped from every completion entry,
+    # without mutating the live state.
     status = {}
     for exercise_uuid, exercise_status in db.EXERCISES_STATUS.items():
         tasks = {}
@@ -114,7 +114,7 @@ def resetAll(wipeUsers=True):
         db.USER_ID_TO_EMAIL_MAPPING = {}
         db.EMAIL_TO_USER_ID_MAPPING = {}
         db.USER_ID_TO_AUTHKEY_MAPPING = {}
-    # Drop buffer A (inject-eval attempts) so no stale "why" traces or "cleared by"
+    # Drop the inject-eval attempts so no stale "why" traces or "cleared by"
     # provenance survive a reset — all eval data is memory-only.
     db.resetUserEvaluationAttempts()
     init_exercises_tasks()
@@ -408,9 +408,9 @@ async def check_active_tasks(user_id: int, data: dict, context: dict, for_target
 
     # Record ONE EvaluationAttempt aggregating every task this action was checked
     # against (each carrying its captured {outcome, debug} trace), stamp durable
-    # provenance on each newly-cleared completion, and light the feed pip
-    # (PRD-inject-eval-provenance). Only MISP/webhook checks are captured, so a
-    # suricata-only action contributes no checks and records no attempt.
+    # provenance on each newly-cleared completion, and light the feed pip.
+    # Only MISP/webhook checks are captured, so a suricata-only action contributes
+    # no checks and records no attempt.
     if checks:
         trigger = provenance.build_trigger(notification)
         attempt = provenance.build_attempt(user_id, trigger, checks)
@@ -458,9 +458,9 @@ async def check_inject(user_id: int, inject: dict, data: dict, context: dict, fo
     successCount = 0
     for inject_evaluation in inject['inject_evaluation']:
         await sendUserInjectCheckInProgress(user_id, inject['uuid'])
-        # debug=True returns (success, debug_steps): the engine already computes the
-        # trace; we simply stop discarding it. The pass/fail decision below is
-        # unchanged from the pre-provenance logic.
+        # debug=True returns (success, debug_steps): the engine computes the trace
+        # and returns it alongside the outcome. The pass/fail decision below does
+        # not depend on debug.
         result = await inject_checker_router(user_id, inject_evaluation, data, context, debug=True)
         success, debug_steps = result if isinstance(result, tuple) else (result, [])
         if capture:

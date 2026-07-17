@@ -314,7 +314,7 @@ async def get_user_events(sid, data):
 
 @sio.event
 async def get_user_evaluations(sid, data):
-    # Per-user inject-evaluation attempts (buffer A) seeding the drawer's
+    # Per-user inject-evaluation attempts seeding the drawer's
     # "why did / didn't this count?" view. Ungated, like get_user_events.
     return provenance_model.get_user_evaluations(int(data['user_id']))
 
@@ -510,8 +510,8 @@ async def sendUserInjectCheckInProgress(user: int, inject_uuid: str):
 
 
 async def sendUserEvaluationRecorded(user_id: int, attempt: dict):
-    # A newly captured EvaluationAttempt (buffer A). The client live-prepends it to
-    # the open drawer's evaluation ring for this player (PRD-inject-eval-provenance).
+    # A newly captured EvaluationAttempt. The client live-prepends it to
+    # the open drawer's evaluation ring for this player.
     await sio.emit('user_evaluation_recorded', {'user_id': user_id, 'attempt': attempt})
 
 

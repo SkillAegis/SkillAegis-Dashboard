@@ -1,21 +1,17 @@
 <script setup>
 /*
  * EvaluationDebug — the shared, read-only renderer of a captured evaluation.
- * (PRD-inject-eval-provenance, Phase 2.)
  *
- * A dark-theme port of the SkillAegis-Editor Inject Tester's outcome+debug block
- * (SkillAegis-Editor/src/Views/InjectTester.vue:571-702), matching the signed-off
- * Phase 0 mockup surface 4 (docs/mockups/inject-eval-provenance.html). It shows
- * ONE check (one task's evaluation) exactly as it was captured at the moment of
- * the triggering action — deliberately not re-run — as an Outcome pill followed by
- * a numbered, colour-grouped step timeline (one group per evaluation parameter),
+ * Shows ONE check (one task's evaluation) exactly as it was captured at the moment
+ * of the triggering action — deliberately not re-run — as an Outcome pill followed
+ * by a numbered, colour-grouped step timeline (one group per evaluation parameter),
  * per-step success/fail/error pills, extracted-data dumps with a size/shape header,
  * and — for the `python` strategy — a Status/Exit/Duration table + STDOUT/STDERR.
  *
  * Renders as an overlay (Teleport to body → escapes any transformed ancestor), so
  * it defines the design tokens it needs itself rather than inheriting them from a
- * `.sa-root` ancestor. Emits `close` on ✕ / backdrop / Esc. Phases 3-5 open it from
- * the Live Feed pip, the drawer's "View evaluation", and the event-history "Debug".
+ * `.sa-root` ancestor. Emits `close` on ✕ / backdrop / Esc. Opened from the Live
+ * Feed pip, the drawer's "View evaluation", and the event-history "Debug".
  */
 import { computed, onMounted, onBeforeUnmount } from 'vue'
 
@@ -30,9 +26,8 @@ const props = defineProps({
   // 'MISP' | 'webhook' — shown in the banner.
   targetTool: { type: String, default: '' },
   // False when the full step trace has rolled out of the retention buffer and
-  // only the compact recorded outcome survives (surface 2 degraded path) — the
-  // Debug section then says so instead of showing an empty timeline as if the
-  // action ran no checks.
+  // only the compact recorded outcome survives — the Debug section then says so
+  // instead of showing an empty timeline as if the action ran no checks.
   traceRetained: { type: Boolean, default: true },
 })
 
@@ -40,7 +35,7 @@ const emit = defineEmits(['close'])
 
 const OUTCOME_SUCCESS = 1
 
-// Per-step pill glyph/label, mirroring the Editor's success/fail/error pills.
+// Per-step pill glyph/label for success/fail/error steps.
 const SPILL = {
   success: { icon: '✓', label: 'Success' },
   fail: { icon: '⚠', label: 'Fail' },
@@ -59,8 +54,8 @@ const isHook = computed(
   () => props.trigger?.http_method === 'HOOK' || props.trigger?.origin === 'webhook',
 )
 
-// query_mirror has no native trace — the backend/mock synthesizes one. Flag it so
-// the Debug header can note as much (honest about the difference).
+// query_mirror has no native trace — one is synthesized. Flag it so the Debug
+// header can note as much (honest about the difference).
 const hasSynthesized = computed(() =>
   (props.check?.evaluations || []).some((e) => e.evaluation_strategy === 'query_mirror'),
 )
@@ -91,8 +86,8 @@ function hueStyle(i) {
   return { color: `rgb(var(--ed-${i}-rgb))` }
 }
 
-// Split a message on backtick-delimited spans so jq paths render monospace — as in
-// the mockup's "Testing `.Event.Attribute[]…`". Backticks are kept for the reader.
+// Split a message on backtick-delimited spans so jq paths render monospace (e.g.
+// "Testing `.Event.Attribute[]…`"). Backticks are kept for the reader.
 function msgSegments(msg) {
   if (!msg) return []
   return String(msg)
@@ -102,7 +97,7 @@ function msgSegments(msg) {
 }
 
 // A step's `data` is worth dumping when it's a primitive or a non-empty
-// object/array (mirrors the Editor: `{}` on primary/success steps is skipped).
+// object/array (`{}` on primary/success steps is skipped).
 function hasData(step) {
   const d = step?.data
   if (d === null || d === undefined) return false
@@ -112,7 +107,7 @@ function hasData(step) {
 
 // Over-cap dumps arrive pre-truncated as a raw preview *string* (already JSON text,
 // sliced at capture) — show it verbatim. Everything else is a live value → pretty
-// JSON, matching the Editor's `JSON.stringify(data, undefined, 2)`.
+// JSON.
 function dumpText(step) {
   if (step?.data_meta?.truncated) {
     return typeof step.data === 'string' ? step.data : String(step.data)
@@ -174,7 +169,7 @@ onBeforeUnmount(() => {
             <span class="cap">READ-ONLY · AS CAPTURED</span>
           </div>
 
-          <!-- Outcome pill (mirrors the Editor's Outcome row) -->
+          <!-- Outcome pill -->
           <div class="ed-outcome-row">
             <span class="ed-outcome-lbl">Outcome</span>
             <span class="ed-outcome" :class="outcome.cls">
@@ -309,9 +304,9 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* Design tokens. The overlay teleports to <body>, escaping the dashboard's
-   `.sa-root`, so it carries its own token set. The `--sa-*` values mirror
+   `.sa-root`, so it carries its own token set. The `--sa-*` values match
    src/TheDahboard.vue verbatim; the six `--ed-*` hues are the debug-group cycle
-   (dark-theme equivalents of the Editor's cyan/amber/blue/pink/violet/green). */
+   (cyan/amber/blue/pink/violet/green). */
 .ed-overlay {
   --sa-cyan-rgb: 54, 210, 255;
   --sa-mint-rgb: 91, 227, 154;
@@ -534,7 +529,7 @@ onBeforeUnmount(() => {
 .ed-step + .ed-step {
   margin-top: 6px;
 }
-/* vertical connector — echoes the Editor's border-l between a group's steps */
+/* vertical connector between a group's steps */
 .ed-group .ed-conn {
   position: absolute;
   left: 15px;

@@ -71,19 +71,17 @@ HISTORY_BUFFER = 120          # 5s buckets in the feed timeline (~10 min shown)
 PER_USER_HISTORY = 50         # per-player event ring for the drill-down drawer
                               # (deeper than the 30-event global feed)
 
-# --- Inject-evaluation provenance (PRD-inject-eval-provenance) ----------------
-# The dashboard's "why did / didn't this count?" store. The real backend's eval
-# engine already produces a {message,data,style} debug trace (backend/utils.py);
-# the mock synthesizes the same shape so the whole UI can be built against it.
-ATTEMPT_BUFFER_SIZE = 20      # buffer A: last-X evaluation attempts kept per user
-                              # (ephemeral, mirrors db.USER_EVALUATION_ATTEMPTS)
+# --- Inject-evaluation provenance --------------------------------------------
+# The dashboard's "why did / didn't this count?" store. Synthesizes
+# {message,data,style} debug traces so the whole UI has data to render.
+ATTEMPT_BUFFER_SIZE = 20      # last-X evaluation attempts kept per user (ephemeral)
 DATA_DUMP_CAP_BYTES = 16384   # a step's `data` over this is stored as a bounded
                               # preview *at capture time* (never the full MB)
 PROVENANCE_DROP_RATE = 0.12   # fraction of *seeded* completions deliberately left
                               # without provenance, to exercise the post-restore
                               # "cleared by — (provenance not retained)" path
-INJECT_EVAL_SUCCESS = 1       # outcome codes — verbatim from the Editor's contract
-INJECT_EVAL_FAIL = 2          # (SkillAegis-Editor InjectTester: OUTCOME_SUCCESS/FAILED)
+INJECT_EVAL_SUCCESS = 1       # evaluation outcome codes
+INJECT_EVAL_FAIL = 2
 
 _DEV_ORIGIN_RE = re.compile(r"^http://(localhost|127\.0\.0\.1):\d+$")
 
@@ -117,10 +115,10 @@ STATE = {
     "notifications": [],       # newest first
     "user_notifications": {},  # user_id -> [notif,...] newest first (drawer history)
     "notif_id": 0,
-    "evaluations": {},         # buffer A: user_id -> [EvaluationAttempt,...] newest first,
+    "evaluations": {},         # user_id -> [EvaluationAttempt,...] newest first,
                                # capped at ATTEMPT_BUFFER_SIZE (get_user_evaluations)
     "provenance": {},          # provenance[uid][ex_uuid][task_index] = compact clear-origin
-                               # dict; session-durable (survives buffer A rolling over)
+                               # dict; session-durable (survives the attempt buffer rolling over)
     "task_actions": {},        # task_uuid -> synthetic {action, evaluations} template
     "eval_id": 0,
     "verbose": False,          # feed filter: show all traffic (toggle_verbose_mode)
@@ -256,7 +254,7 @@ def build_world(n_players):
 
     # Surface one completion pip on the Live Feed at first paint (see the helper —
     # the pip is otherwise live-only, invisible until a completion fires). Last, so
-    # the reproducible seed sequence above and buffer A stay byte-identical.
+    # the reproducible seed sequence above and the attempt buffer stay byte-identical.
     _seed_feed_completion_pip()
 
 
@@ -277,7 +275,7 @@ def _clear_user(uid, now=None):
 
 
 # ----------------------------------------------------------------------------
-# Payload builders — these mirror backend/server.py + exercise.py + leaderboard.py
+# Payload builders — assemble the whole-state event payloads the dashboard reads
 # ----------------------------------------------------------------------------
 def _public_exercises():
     return sorted(STATE["exercises"], key=lambda e: e["priority"])
@@ -378,9 +376,8 @@ def build_progress():
 
     selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
 
-    # Earliest completer per (exercise, task index) — mirrors
-    # exercise.py::mark_task_completed's first_completion bookkeeping so the
-    # dashboard's first-blood badge lights up on the true earliest clearer.
+    # Earliest completer per (exercise, task index), so the dashboard's
+    # first-blood badge lights up on the true earliest clearer.
     first_by_task = {}
     for ex in selected:
         for ti in range(len(ex["tasks"])):
@@ -403,8 +400,8 @@ def build_progress():
                 if ti in done:
                     entry = {"user_id": uid, "timestamp": done[ti],
                              "first_completion": first_by_task.get((ex["uuid"], ti)) == uid}
-                    # Completion provenance (data model B) rides the existing
-                    # snapshot — no new event needed for the drawer's "cleared by".
+                    # Completion provenance rides the existing snapshot — no new
+                    # event needed for the drawer's "cleared by".
                     prov = STATE["provenance"].get(uid, {}).get(ex["uuid"], {}).get(ti)
                     if prov is not None:
                         entry["provenance"] = prov
@@ -485,10 +482,9 @@ def _make_notification(user):
 
 
 def _accept(notif):
-    """Server-side feed filter, mirroring the real backend's verbose / apiquery
-    modes (see backend/notification.py:is_accepted_notification). Verbose shows
-    everything; apiquery keeps only API (JSON) requests; the default hides the
-    raw non-API "noise" while keeping API requests and webhook notifications."""
+    """Server-side feed filter. Verbose shows everything; apiquery keeps only
+    API (JSON) requests; the default hides the raw non-API "noise" while keeping
+    API requests and webhook notifications."""
     if STATE["verbose"]:
         return True
     if STATE["apiquery"]:
@@ -497,10 +493,9 @@ def _accept(notif):
 
 
 def _record_user_notification(notif):
-    """Append an accepted notification to its author's per-user history ring —
-    mirrors backend/notification.py:record_notification, which records every
-    accepted notification into a deeper per-user buffer keyed by user_id. Feeds
-    the drill-down drawer's events rail (get_user_events)."""
+    """Append an accepted notification to its author's per-user history ring
+    (keyed by user_id). Feeds the drill-down drawer's events rail
+    (get_user_events)."""
     uid = notif.get("user_id")
     if uid is None:
         return
@@ -510,13 +505,11 @@ def _record_user_notification(notif):
 
 
 # ----------------------------------------------------------------------------
-# Inject-evaluation provenance — synthetic {outcome, debug} attempts
-# (PRD-inject-eval-provenance). Every helper here fabricates data in the exact
-# shape the real engine emits: `debug` is a list-of-groups, each group a list of
-# {message,data,style} steps (styles: primary/success/fail/error/''); a `python`
-# evaluation's group is [[{status,exit_code,stdout,stderr,duration}]] verbatim
-# from sandboxClient. Kept faithful so Phase 6's real backend can drop straight
-# in behind the same UI.
+# Inject-evaluation provenance — synthetic {outcome, debug} attempts. Every
+# helper here fabricates data in this shape: `debug` is a list-of-groups, each
+# group a list of {message,data,style} steps (styles: primary/success/fail/
+# error/''); a `python` evaluation's group is
+# [[{status,exit_code,stdout,stderr,duration}]] — the raw sandbox result.
 # ----------------------------------------------------------------------------
 
 # Per-task synthetic action + evaluation template, keyed by task name (the mock's
@@ -647,7 +640,7 @@ def _task_action(ex, ti):
 
 
 def _available_indices(ex, done):
-    """Task indices the engine would actually check on an action: incomplete and
+    """Task indices actually eligible to be checked on an action: incomplete and
     (for the chained exercise) not still locked behind an unmet prerequisite."""
     avail = []
     for ti, t in enumerate(ex["tasks"]):
@@ -666,8 +659,8 @@ def _data_meta(value):
     """Return (display_value, meta) for a step's extracted `data`. meta carries a
     size/shape header (bytes · shape · count) so the Debug view can annotate every
     dump. A value serializing to more than DATA_DUMP_CAP_BYTES is replaced by a
-    bounded preview *string* (truncated="over cap") — the mock, like Phase 6, never
-    retains the full multi-MB value."""
+    bounded preview *string* (truncated="over cap") — the full multi-MB value is
+    never retained."""
     raw = json.dumps(value, ensure_ascii=False)
     nbytes = len(raw.encode("utf-8"))
     if isinstance(value, bool):
@@ -730,7 +723,7 @@ def _big_dump_meta():
 
 
 def _debug_data_filtering(ev, passing, large=False):
-    """List-of-groups mirroring backend/utils.py:eval_data_filtering exactly."""
+    """List-of-groups debug trace for a data_filtering evaluation."""
     groups = []
     if passing:
         for path in ev["paths"]:
@@ -739,8 +732,8 @@ def _debug_data_filtering(ev, passing, large=False):
                 {"message": "Condition satisfied", "data": {}, "style": "success"},
             ])
         return groups
-    # Failing: the real engine breaks out on the first unsatisfied param, so only
-    # the first group appears.
+    # Failing: evaluation stops at the first unsatisfied param, so only the
+    # first group appears.
     path = ev["paths"][0]
     fail = ev.get("fail", {})
     if large or fail.get("large"):
@@ -765,9 +758,9 @@ def _debug_data_filtering(ev, passing, large=False):
 
 
 def _debug_python(ev, passing):
-    """[[result]] mirroring sandboxClient.run(debug=True): a single group holding
-    the raw sandbox result dict (no message/style — the Debug view switches on the
-    evaluation's `python` strategy to render the Status/Exit/Duration table)."""
+    """[[result]]: a single group holding the raw sandbox result dict (no
+    message/style — the Debug view switches on the evaluation's `python` strategy
+    to render the Status/Exit/Duration table)."""
     result = {
         "status": "success",
         "exit_code": 0,
@@ -780,8 +773,8 @@ def _debug_python(ev, passing):
 
 def _debug_query_mirror(ev, passing):
     """Synthesized trace (query_mirror is a pure equality check with no native
-    trace — PRD decision): a primary "Comparing…" step + a success/fail step
-    carrying expected vs. actual."""
+    trace): a primary "Comparing…" step + a success/fail step carrying expected
+    vs. actual."""
     expected = ev["expected"]
     actual = expected if passing else ev["actual"]
     disp, meta = _data_meta({"expected": expected, "actual": actual})
@@ -834,10 +827,10 @@ def _sample_action_payload(ex, ti):
 
 
 def _eval_notification(user, ex, ti, ts):
-    """A Live Feed notification for the action that triggered an evaluation, in
-    the real backend's notification shape (zmq: url/http_method/payload/is_api_request;
-    webhook: target_tool + a "@data - N byte(s)" string, no url). Its `id` is what
-    the attempt/provenance and notification_outcome all key off."""
+    """A Live Feed notification for the action that triggered an evaluation
+    (zmq: url/http_method/payload/is_api_request; webhook: target_tool + a
+    "@data - N byte(s)" string, no url). Its `id` is what the attempt/provenance
+    and notification_outcome all key off."""
     STATE["notif_id"] += 1
     nid = STATE["notif_id"]
     tmpl = _task_action(ex, ti)
@@ -870,8 +863,8 @@ def _trigger_from_notif(notif):
 
 
 def _truncate_trigger_payload(payload):
-    """Bound the evaluated-data snapshot the same way Phase 6 must. Mock payloads
-    are tiny, so this only ever bites a pathological string."""
+    """Bound the evaluated-data snapshot. Mock payloads are tiny, so this only
+    ever bites a pathological string."""
     if isinstance(payload, str) and len(payload.encode("utf-8")) > DATA_DUMP_CAP_BYTES:
         return payload[:DATA_DUMP_CAP_BYTES] + "…"
     return payload
@@ -913,8 +906,9 @@ def _is_first_completion(uid, ex, ti):
 
 
 def _set_provenance(uid, ex, ti, notif, attempt, check):
-    """Attach compact, session-durable clear-origin to a completion (data model B).
-    Survives buffer A rolling over; the full trace stays in A only while retained."""
+    """Attach compact, session-durable clear-origin to a completion. Survives the
+    attempt buffer rolling over; the full trace stays in that buffer only while
+    retained."""
     trig = attempt["trigger"]
     STATE["provenance"][uid][ex["uuid"]][ti] = {
         "notification_id": notif["id"],
@@ -931,8 +925,8 @@ def _seed_user_evaluations(user):
     """Backfill a believable evaluation history: one passing attempt per completed
     task (in completion order), plus a few failing "checked, cleared nothing"
     attempts on the current available task(s). Provenance is set for (most) passes;
-    buffer A keeps only the newest ATTEMPT_BUFFER_SIZE, so older completions keep
-    their compact provenance but lose the full trace — the real lifecycle."""
+    the attempt buffer keeps only the newest ATTEMPT_BUFFER_SIZE, so older
+    completions keep their compact provenance but lose the full trace."""
     uid = user["user_id"]
     selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
     events = []  # (ts, ex, checked_indices, completed_indices)
@@ -976,17 +970,18 @@ def _seed_large_dump_attempt(user, ex):
 def _seed_feed_completion_pip():
     """Demo affordance: surface ONE completion pip on the Live Feed at first paint.
 
-    Surface 1's pip is normally a *live* augmentation — `notification_outcome`
+    The completion pip is normally a *live* augmentation — `notification_outcome`
     merges `completed_tasks` onto a feed row as the completion happens, so a fresh
     load / reload shows only raw notifications and no pip (the durable record lives
-    in the drawer, surfaces 2-3). That leaves surface 1 invisible until a live
-    completion fires (the sim, or POST /mock/eval-pass/<id>) — unlike the drawer
-    surfaces, which are already seeded to inspect on load. Seed the most recent real
-    completion as a top-of-feed row already carrying `completed_tasks` so the pip is
-    visible immediately.
+    in the drawer). That leaves the pip invisible until a live completion fires
+    (the sim, or POST /mock/eval-pass/<id>) — unlike the drawer surfaces, which are
+    already seeded to inspect on load. Seed the most recent completion as a
+    top-of-feed row already carrying `completed_tasks` so the pip is visible
+    immediately.
 
     Called last in build_world so the reproducible seed sequence above is unchanged;
-    no attempt is pushed to buffer A, so the evaluation history stays byte-identical.
+    no attempt is pushed to the attempt buffer, so the evaluation history stays
+    byte-identical.
     """
     selected = [e for e in STATE["exercises"] if e["uuid"] in STATE["selected"]]
     if not selected:
@@ -1114,9 +1109,9 @@ async def simulate(tick):
                 await _record_live_failed_check(u, ex0, checked, now)
                 notif_this_tick += 1
 
-        # "Being validated" pulses: mirror the real backend re-checking a
-        # trainee's injects after they act. Fire on a few players' next
-        # available task so the leaderboard's per-task spinner is alive.
+        # "Being validated" pulses: re-check a trainee's injects after they
+        # act. Fire on a few players' next available task so the leaderboard's
+        # per-task spinner is alive.
         checkers = [u for u in movers]
         random.shuffle(checkers)
         for u in checkers[: random.randint(1, 3)]:
@@ -1200,8 +1195,9 @@ async def get_user_events(sid, data):
 
 @sio.event
 async def get_user_evaluations(sid, data):
-    """Seed the drawer's evaluation view on open — buffer A for a user (newest
-    first), mirroring get_user_events. Ungated request/ack like the other reads."""
+    """Seed the drawer's evaluation view on open — the attempt buffer for a user
+    (newest first), same as get_user_events. Ungated request/ack like the other
+    reads."""
     try:
         uid = int(data.get("user_id"))
     except (TypeError, ValueError):
@@ -1274,8 +1270,8 @@ async def change_exercise_selection(sid, payload):
 
 
 def _clear_evaluation_state():
-    """Drop buffer A + completion provenance for everyone — used whenever progress
-    itself is wiped, so no stale 'cleared by' lines survive a reset."""
+    """Drop the attempt buffer + completion provenance for everyone — used whenever
+    progress itself is wiped, so no stale 'cleared by' lines survive a reset."""
     for uid in STATE["evaluations"]:
         STATE["evaluations"][uid] = []
     for uid in STATE["provenance"]:

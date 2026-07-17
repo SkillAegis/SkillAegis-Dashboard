@@ -327,9 +327,7 @@ watch(
   background: rgba(var(--sa-danger-rgb), 0.18);
   border: 1px solid rgba(var(--sa-danger-rgb), 0.4);
 }
-/* completion pip — a mint ✓ chip naming the task an action cleared. The one new
-   thing on a feed row, and completed-only (see Phase 3, PRD-inject-eval-provenance).
-   Lifted from the signed-off mockup surface 1. */
+/* completion pip — a mint ✓ chip naming the task an action cleared; completed-only. */
 .sa-pip {
   display: inline-flex;
   align-items: center;

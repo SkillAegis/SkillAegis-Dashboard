@@ -11,8 +11,8 @@ from backend.target_tools.misp.exercise import fetch_data_for_query_search
 
 async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict, debug: bool = False) -> Union[bool, tuple]:
     # When debug=True, return (success, debug_steps) so the caller can capture the
-    # trace. This path previously computed the data_filtering/python trace and threw
-    # it away (`outcome, d = …`) — now it is surfaced (PRD-inject-eval-provenance).
+    # data_filtering/python trace alongside the outcome. When debug is off, return
+    # just the boolean.
     if inject_evaluation['evaluation_strategy'] == 'data_filtering':
         return eval_data_filtering(inject_evaluation, data, context, debug)
     elif inject_evaluation["evaluation_strategy"] == "misp_query_search":

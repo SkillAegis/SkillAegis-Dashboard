@@ -20,7 +20,7 @@ def eval_query_mirror(user_id: int, expected_data, data_to_validate, context: di
     success = expected_data == data_to_validate
     if debug:
         # query_mirror has no native step trace — synthesize one so the outcome
-        # renders in the Debug view like every other strategy (PRD decision).
+        # renders in the Debug view like every other strategy.
         return success, synthesize_query_mirror_debug(expected_data, data_to_validate, success)
     return success
 

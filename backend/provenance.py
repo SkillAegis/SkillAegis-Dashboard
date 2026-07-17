@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Inject-evaluation provenance & debugging — capture side (PRD-inject-eval-provenance, Phase 6).
+"""Inject-evaluation provenance & debugging — capture side.
 
-The evaluation engine already produces a rich `(success, debug_steps)` trace when
-called with `debug=True` (`backend/utils.py`), and the SkillAegis-Editor renders
-exactly that shape. This module is where the live routers stop discarding that
-trace: it turns each check into the frozen `EvaluationAttempt` contract the
-dashboard reads (`get_user_evaluations` / `user_evaluation_recorded` /
-completion `provenance` / `notification_outcome`), and it is the single place that
-bounds large data dumps so a per-user buffer of 20 attempts can never hold
-multi-megabyte MISP events.
+Captures the evaluation engine's `(success, debug_steps)` trace (produced when a
+check runs with `debug=True`, see `backend/utils.py`) and turns each check into the
+`EvaluationAttempt` contract the dashboard reads (`get_user_evaluations` /
+`user_evaluation_recorded` / completion `provenance` / `notification_outcome`).
 
-The shapes here are deliberately identical to what `backend/dev_mock_server.py`
-fakes (Phase 1's frozen contract), so the four UI surfaces built against the mock
-work unchanged against the real backend:
+Provides the attempt/check/evaluation/trigger/provenance record builders, the
+per-user attempt-buffer read/write, the data-dump bounding, and the synthesized
+`query_mirror` trace. Data dumps are bounded at capture time so a per-user buffer
+of 20 attempts can never hold multi-megabyte MISP events, and each completion
+carries a compact, session-durable clear-origin (`provenance`) that survives the
+buffer rolling over.
 
     EvaluationAttempt = {id, user_id, timestamp, target_tool:'MISP'|'webhook',
         trigger:{notification_id, origin, time, http_method, url, target_tool, payload},
@@ -24,8 +23,8 @@ work unchanged against the real backend:
 `debug` is a list-of-groups of {message,data,style} steps — except a `python`
 evaluation's group is the raw [[{status,exit_code,stdout,stderr,duration}]] the
 sandbox returns (no message/style — the renderer switches on the `python`
-strategy). All eval data is ephemeral: buffer A lives only in `db`, and completion
-`provenance` is stripped before `backup.json` is written (see
+strategy). All eval data is ephemeral: the attempt buffer lives only in `db`, and
+completion `provenance` is stripped before `backup.json` is written (see
 `backend/exercise.py`).
 """
 
@@ -35,18 +34,16 @@ import time
 import backend.db as db
 
 
-# Outcome codes — verbatim from the Editor's contract (SkillAegis-Editor/main.py:
-# INJECT_EVAL_SUCCESS / INJECT_EVAL_FAIL) and the dashboard's EvaluationDebug.vue.
+# Outcome codes for an evaluation result, matching the dashboard's EvaluationDebug.vue.
 INJECT_EVAL_SUCCESS = 1
 INJECT_EVAL_FAIL = 2
 
 # A step's extracted `data` (or a python group's stdout/stderr) serializing to more
 # than this is bounded to a preview *at capture time* — the buffer never retains
-# the full value. Mirrors the mock's DATA_DUMP_CAP_BYTES and the Editor's 15000-char
-# dump cap.
+# the full value.
 DATA_DUMP_CAP_BYTES = 16384
 
-# Monotonic id for buffer-A attempts (the drawer joins events → attempts on
+# Monotonic id for attempts (the drawer joins events → attempts on
 # trigger.notification_id; the attempt's own id keys the "View evaluation" lookup).
 _ATTEMPT_COUNTER = 0
 
@@ -91,7 +88,7 @@ def data_meta_for(value):
     every dump with. A value serializing to more than DATA_DUMP_CAP_BYTES is
     replaced by a bounded preview *string* (already-JSON text, sliced) with
     `truncated=True` + an honest "truncated at capture" note — so nothing bigger
-    than the cap is ever retained in buffer A. Small values pass through unchanged
+    than the cap is ever retained in the buffer. Small values pass through unchanged
     and the frontend pretty-prints them.
     """
     try:
@@ -114,7 +111,7 @@ def data_meta_for(value):
 
 
 def _is_meaningful(value) -> bool:
-    """Worth a size header + dump? Mirrors EvaluationDebug.hasData — a primitive or
+    """Worth a size header + dump? Matches EvaluationDebug.hasData — a primitive or
     a non-empty object/array. The `{}` placeholder on primary/success/fail steps is
     skipped (no header, no dump)."""
     if value is None:
@@ -128,7 +125,7 @@ def _bound_data_filtering_debug(debug_steps):
     """Walk a list-of-groups of {message,data,style} steps and bound every
     meaningful `data` dump in place on a shallow copy — the engine's own trace is
     left untouched. `data_meta` is attached only to steps that actually carry
-    extracted data (the '' / 'error' / 'fail' steps), matching the mock."""
+    extracted data (the '' / 'error' / 'fail' steps)."""
     bounded_groups = []
     for group in debug_steps or []:
         bounded_steps = []
@@ -177,10 +174,10 @@ def _bound_python_debug(debug_steps):
 # ---------------------------------------------------------------------------
 
 def synthesize_query_mirror_debug(expected_data, data_to_validate, success: bool):
-    """query_mirror is a pure equality check with no native step trace (PRD
-    decision): emit a minimal group — a `primary` "Comparing…" step + a
-    success/fail step carrying expected vs. actual — so its outcome renders in the
-    Debug view like every other strategy. EvaluationDebug flags it as synthesized."""
+    """query_mirror is a pure equality check with no native step trace: emit a
+    minimal group — a `primary` "Comparing…" step + a success/fail step carrying
+    expected vs. actual — so its outcome renders in the Debug view like every other
+    strategy. EvaluationDebug flags it as synthesized."""
     payload = {"expected": expected_data, "actual": data_to_validate}
     display, meta = data_meta_for(payload)
     outcome_step = {
@@ -276,8 +273,8 @@ def build_trigger(notification) -> dict:
 
 
 def build_timed_trigger(context: dict) -> dict:
-    """A timed inject has no incoming feed action (PRD open-question resolution):
-    attribute it to the timed trigger, not a notification_id."""
+    """A timed inject has no incoming feed action: attribute it to the timed
+    trigger, not a notification_id."""
     return {
         "notification_id": None,
         "origin": "timed",
@@ -305,13 +302,13 @@ def build_attempt(user_id: int, trigger: dict, checks: list, target_tool=None) -
 
 
 def record_attempt(user_id: int, attempt: dict) -> None:
-    """Push into buffer A (bounded ring, newest first)."""
+    """Push into the attempt buffer (bounded ring, newest first)."""
     db.addUserEvaluationAttempt(user_id, attempt)
 
 
 def build_provenance(attempt: dict, check: dict) -> dict:
-    """Compact, session-durable clear-origin (data model B) attached to a
-    completion entry. Survives buffer A rolling over — the full trace stays in A
+    """Compact, session-durable clear-origin attached to a completion entry.
+    Survives the attempt buffer rolling over — the full trace stays in the buffer
     only while retained; this keeps the drawer's "cleared by" line working after."""
     trigger = attempt.get("trigger", {})
     return {
@@ -343,7 +340,7 @@ def strip_provenance(entry: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def get_user_evaluations(user_id: int) -> list:
-    """Buffer A for a user (newest first) — seeds the drawer's evaluation view,
-    mirroring get_user_events. Ungated, like the other read acks."""
+    """The attempt buffer for a user (newest first) — seeds the drawer's evaluation
+    view. Ungated read ack, like get_user_events and the other read acks."""
     buffer = db.USER_EVALUATION_ATTEMPTS.get(user_id)
     return list(buffer) if buffer is not None else []

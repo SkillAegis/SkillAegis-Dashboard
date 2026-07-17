@@ -30,8 +30,8 @@ def is_valid_evaluation_context(user_id: int, inject_evaluation: dict, data: dic
 
 async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict, debug: bool = False) -> Union[bool, tuple]:
     # When debug=True, every strategy returns (success, debug_steps) so the caller
-    # can capture the "why" trace it already computes and would otherwise discard
-    # (PRD-inject-eval-provenance). The non-debug path is unchanged (returns bool).
+    # can capture the "why" trace the engine computes. When debug is off, each
+    # returns just the boolean outcome.
     if not is_valid_evaluation_context(user_id, inject_evaluation, data, context):
         return (False, []) if debug else False
 

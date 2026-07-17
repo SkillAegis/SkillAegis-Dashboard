@@ -28,10 +28,10 @@ def getInstalledSuricataVersion() -> Union[str, None]:
 
 
 async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict, debug: bool = False) -> Union[bool, tuple]:
-    # suricata is out of scope for the inject-eval-provenance trace capture (its
-    # shell-out/pcap result has a different shape). The `debug` param only keeps the
-    # router signature uniform with MISP/webhook — it returns an empty trace so a
-    # debug-mode caller does not error.
+    # suricata is out of scope for trace capture (its shell-out/pcap result has a
+    # different shape). The `debug` param only keeps the router signature uniform
+    # with MISP/webhook — it returns an empty trace so a debug-mode caller does not
+    # error.
     if getInstalledSuricataVersion() is None:
         return (False, []) if debug else False
 

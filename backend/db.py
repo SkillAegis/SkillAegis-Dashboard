@@ -23,8 +23,7 @@ NOTIFICATION_MESSAGES = collections.deque([], NOTIFICATION_BUFFER_SIZE)
 PER_USER_NOTIFICATION_BUFFER_SIZE = 50
 USER_NOTIFICATION_MESSAGES = {}  # user_id -> deque(maxlen=…), newest first
 
-# Per-user inject-evaluation attempts — "buffer A" of the inject-eval-provenance
-# feature (PRD-inject-eval-provenance). Each incoming action that triggers an
+# Per-user inject-evaluation attempts. Each incoming action that triggers an
 # evaluation records ONE EvaluationAttempt (the captured {outcome, debug} trace of
 # every available task it was checked against), kept newest-first per user so the
 # drawer can answer "why did / didn't this count?". Bounded ring — the last X per

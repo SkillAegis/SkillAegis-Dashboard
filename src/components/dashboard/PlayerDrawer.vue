@@ -1,14 +1,12 @@
 <script setup>
 /**
  * Player drill-down drawer — a right-edge slide-over that profiles one
- * participant for the selected exercise (Variant B, signed off in Phase 0:
- * docs/archive/PRD-player-drilldown.md).
+ * participant for the selected exercise.
  *
- * Phase 1 builds the interaction surface, the dimming backdrop, and the header
- * (identity + rank + score + live status chips), plus the two-column body: a
- * scrolling main column and a full-height events rail whose list stays an
- * empty-state placeholder until Phase 4 populates it. Per-task timing (Phase 2)
- * and last-seen + sparkline (Phase 3) render below the header in later slices.
+ * The drawer is the interaction surface plus a dimming backdrop and a header
+ * (identity + rank + score + live status chips) over a two-column body: a
+ * scrolling main column (per-task timing, then last-seen + activity sparkline)
+ * and a full-height events rail listing this participant's recent events.
  *
  * The component is a pure view over `selectedPlayer`; open/close is just setting
  * `selectedPlayerId`. `open` tracks that computed directly, so a player leaving
@@ -42,8 +40,8 @@ const search = eventSearch
 const evaluation = activeEvaluation
 const open = computed(() => player.value !== null)
 
-// Surface 3 (Phase 5): which "checked N task(s)" event rows are expanded to their
-// per-task pass/fail list. Keyed by event id (notification_id); local UI state,
+// Which "checked N task(s)" event rows are expanded to their per-task pass/fail
+// list. Keyed by event id (notification_id); local UI state,
 // reset when the drawer moves to another player so it never carries across.
 const expandedEvents = ref(new Set())
 function isEventExpanded(id) {
@@ -71,7 +69,7 @@ const railSub = computed(() => {
 const drawerRef = ref(null)
 const closeBtnRef = ref(null)
 
-// Medal treatment on the rank badge only for a genuine top-3 scorer (mirrors the
+// Medal treatment on the rank badge only for a genuine top-3 scorer (matches the
 // leaderboard's `top`, which requires score > 0 — so rank 1 on an empty board
 // stays neutral rather than gold).
 const rankClass = computed(() => {
@@ -80,8 +78,8 @@ const rankClass = computed(() => {
 })
 
 // Slide from the right by default; a plain cross-fade when reduced motion is on
-// (the admin toggle from Enhancements item 7). The OS-level
-// prefers-reduced-motion is covered by the media query in <style> below.
+// (the admin toggle). The OS-level prefers-reduced-motion is covered by the
+// media query in <style> below.
 const drawerTransition = computed(() =>
   reduceMotionOn.value ? 'sa-drawer-fade' : 'sa-drawer-slide'
 )
@@ -198,7 +196,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               <span v-if="!player.chips.length" class="sa-chip sa-chip-none">no badges yet</span>
             </div>
           </div>
-          <!-- per-task timing & gaps (Phase 2) -->
+          <!-- per-task timing & gaps -->
           <div v-if="tasks" class="sa-sec">
             <div class="sa-sec-h">
               <span class="sa-sec-ttl">TASK TIMING</span>
@@ -243,10 +241,11 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                   <div v-else-if="t.state === 'done' && t.firstBlood" class="sa-tmeta sa-mono">
                     <span class="sa-fb">🩸 first blood</span>
                   </div>
-                  <!-- Surface 2: completed-task provenance ("cleared by …") +
+                  <!-- completed-task provenance ("cleared by …") +
                        View evaluation. Durable line from the completion record;
-                       View opens the passing trace (full from buffer A, else the
-                       compact recorded outcome). Blank note when none was retained. -->
+                       View opens the passing trace (full from the attempt buffer,
+                       else the compact recorded outcome). Blank note when none was
+                       retained. -->
                   <template v-if="t.state === 'done'">
                     <div v-if="t.clearedBy" class="sa-prov sa-mono">
                       <span class="lead">cleared by</span>
@@ -308,7 +307,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               </div>
             </div>
           </div>
-          <!-- last-seen + activity sparkline (Phase 3) -->
+          <!-- last-seen + activity sparkline -->
           <div v-if="activity" class="sa-sec">
             <div class="sa-sec-h">
               <span class="sa-sec-ttl">LAST SEEN &amp; ACTIVITY</span>
@@ -340,7 +339,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           </div>
         </div>
 
-        <!-- events rail — this participant's per-user history (Phase 4), newest
+        <!-- events rail — this participant's per-user history, newest
              first, seeded from the backend and live-appended on the notification push -->
         <div class="sa-erail">
           <div class="sa-erail-head">
@@ -384,7 +383,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                     <div v-if="e.moreCount" class="sa-ev-more sa-mono">▸ {{ e.moreCount }} more</div>
                   </template>
                 </div>
-                <!-- Surface 3: per-event outcome badge — "✓ completed <task>" or
+                <!-- per-event outcome badge — "✓ completed <task>" or
                      an expandable "checked N task(s)"; un-evaluated rows carry none.
                      Debug opens the captured trace in EvaluationDebug. -->
                 <div v-if="e.evalOutcome" class="sa-ev-out">
@@ -679,7 +678,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   color: var(--sa-text-5);
 }
 
-/* section scaffold (shared by Phase 2/3 sections in the main column) */
+/* section scaffold (shared by the sections in the main column) */
 .sa-sec {
   padding: 15px 24px;
   border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.09);
@@ -823,8 +822,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   animation: sa-drawer-blink 1.3s infinite;
 }
 
-/* completed-task provenance line (surface 2) — "cleared by <method> <url> @ time"
-   + a View evaluation control; ported from the signed-off mockup. */
+/* completed-task provenance line — "cleared by <method> <url> @ time"
+   + a View evaluation control. */
 .sa-prov {
   margin-top: 6px;
   display: flex;
@@ -944,7 +943,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   }
 }
 
-/* last-seen + activity sparkline (ported from the Variant B mockup) */
+/* last-seen + activity sparkline */
 .sa-seen {
   display: flex;
   align-items: center;
@@ -1026,8 +1025,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   color: var(--sa-text-6);
   margin-left: auto;
 }
-/* in-rail filter (ported from the Variant B mockup; input treatment matches the
-   Live Feed's .sa-input so the two search boxes read the same) */
+/* in-rail filter (input treatment matches the Live Feed's .sa-input so the two
+   search boxes read the same) */
 .sa-erail-search {
   flex: none;
   display: flex;
@@ -1081,8 +1080,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   line-height: 1.5;
 }
 
-/* event rows (ported from the Variant B mockup; webhook rows borrow the Live
-   Feed's violet treatment so the whole app tints webhooks the same) */
+/* event rows (webhook rows borrow the Live Feed's violet treatment so the whole
+   app tints webhooks the same) */
 .sa-ev {
   border-radius: 10px;
   padding: 8px 11px;
@@ -1158,9 +1157,9 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   color: #d9c690;
 }
 
-/* event-history outcome badges (surface 3) — ported from the signed-off mockup.
-   Interactive badges/controls are <button>s here (keyboard-operable), so they set
-   their own background/border/cursor and pick up the mono face from .sa-mono. */
+/* event-history outcome badges — interactive badges/controls are <button>s here
+   (keyboard-operable), so they set their own background/border/cursor and pick up
+   the mono face from .sa-mono. */
 .sa-ev-out {
   display: flex;
   align-items: center;

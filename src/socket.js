@@ -6,11 +6,11 @@ import debounce from 'lodash.debounce'
 // "undefined" means the URL will be computed from the `window.location` object
 const URL = !import.meta.env.DEV ? '' : 'http://localhost:4001'
 const MAX_LIVE_LOG = 30
-// Per-user drawer history is a deeper ring than the global feed (mirrors the
+// Per-user drawer history is a deeper ring than the global feed (matches the
 // backend's PER_USER_NOTIFICATION_BUFFER_SIZE).
 const MAX_USER_EVENTS = 50
-// Per-user captured-evaluation ring (buffer A), mirroring the backend's
-// ATTEMPT_BUFFER_SIZE — the "what went wrong on my last tries" store.
+// Per-user captured-evaluation ring, matching the backend's ATTEMPT_BUFFER_SIZE —
+// the "what went wrong on my last tries" store.
 const MAX_USER_EVALUATIONS = 20
 
 const initial_state = {
@@ -34,8 +34,8 @@ const initial_state = {
 // Which participant `state.userEvents` currently holds, so the live `notification`
 // push only appends events for the open drawer's player (null when closed).
 let eventsUserId = null
-// Same, for `state.userEvaluations` (buffer A): the live `user_evaluation_recorded`
-// push only prepends attempts for the open drawer's player (null when closed).
+// Same, for `state.userEvaluations`: the live `user_evaluation_recorded` push only
+// prepends attempts for the open drawer's player (null when closed).
 let evaluationsUserId = null
 
 const state = reactive({ ...initial_state })
@@ -146,10 +146,10 @@ export function clearUserEvents() {
   state.userEvents = []
 }
 
-// Player drill-down drawer: seed buffer A (this participant's ring of captured
-// EvaluationAttempts) so the drawer's completed-task "View evaluation" (Phase 4)
-// and event-history outcomes (Phase 5) have the full traces; the
-// `user_evaluation_recorded` handler then live-prepends new attempts for them.
+// Player drill-down drawer: seed this participant's ring of captured
+// EvaluationAttempts so the drawer's completed-task "View evaluation" and
+// event-history outcomes have the full traces; the `user_evaluation_recorded`
+// handler then live-prepends new attempts for them.
 export function loadUserEvaluations(user_id) {
   evaluationsUserId = user_id
   state.userEvaluations = []
@@ -321,7 +321,7 @@ async function doLogout() {
     })
 
     // Drop client auth state regardless, then reconnect so the socket's
-    // handshake session no longer carries the (now invalidated) auth — mirrors
+    // handshake session no longer carries the (now invalidated) auth — matches
     // doLogin's rebind.
     connectionState.is_authenticated = false
     socket.disconnect()
@@ -501,9 +501,9 @@ socket.on('notification_outcome', ({ notification_id, completed_tasks }) => {
   }
 })
 
-// A newly captured evaluation attempt (buffer A). Live-prepend to the open
-// drawer's evaluation ring for this player only, so its "View evaluation" traces
-// stay current as completions happen while the drawer is open — mirrors how
+// A newly captured evaluation attempt. Live-prepend to the open drawer's
+// evaluation ring for this player only, so its "View evaluation" traces stay
+// current as completions happen while the drawer is open — matching how
 // `notification` feeds `userEvents`.
 socket.on('user_evaluation_recorded', ({ user_id, attempt }) => {
   if (evaluationsUserId !== null && user_id === evaluationsUserId && attempt) {

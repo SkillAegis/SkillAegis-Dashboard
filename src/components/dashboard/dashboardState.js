@@ -6,7 +6,7 @@
  * the shapes the dashboard design consumes (leaderboard rows, podium, rotating
  * champion scenes, live feed, activity timeline, header stats).
  *
- * It mirrors the pattern used by `socket.js`: a module-level singleton of
+ * It follows the same pattern as `socket.js`: a module-level singleton of
  * reactive state and `computed` view-models that components import directly.
  *
  * Color strings reference the .sa-root token layer (see CLAUDE.md → Conventions)
@@ -40,7 +40,7 @@ import {
 } from '@/socket'
 
 /* ------------------------------------------------------------------ */
-/* Tunables (kept in sync with the source design)                     */
+/* Tunables                                                           */
 /* ------------------------------------------------------------------ */
 const ROW_HEIGHT = 58 // px, height of a single leaderboard row slot (card + vertical padding)
 const SCENE_MS = 7000 // champion slot rotates between scenes this often
@@ -76,7 +76,7 @@ export function selectExercise(index) {
   selectedExerciseIndex.value = index
 }
 
-// Live Feed options (restored from the legacy live-logs view). These are
+// Live Feed options. These are
 // server-side notification filters: the toggle mirrors its flag to the backend
 // via socket.js, and the server decides what the feed stream contains —
 // verbose shows all traffic, apiQueryOnly drops non-API requests. Both require
@@ -253,7 +253,7 @@ const completions = reactive(new Map())
 
 // `state.progresses` is reassigned wholesale on every update, so its identity
 // already changes each time — a shallow (identity) watch fires reliably and
-// skips the deep-traversal cost that scaled with roster size (item 6, perf).
+// skips the deep-traversal cost that scaled with roster size.
 watch(
   () => progresses.value,
   (np) => {
@@ -288,7 +288,7 @@ watch(
 /* ------------------------------------------------------------------ */
 const MEDALS = ['var(--sa-gold)', '#c7d3e6', '#e09b62']
 
-// Item 6 (perf): the leaderboard is split into a heavy data-driven base and a
+// The leaderboard is split into a heavy data-driven base and a
 // thin time-driven overlay. `playersBase` does the O(P×T) work — each row's task
 // grid + heat, the score-rank pass and the display sort — and reads data only
 // (progresses / activity / sort / filter), so it rebuilds on data change, NOT on
@@ -484,11 +484,11 @@ export const selectedPlayerId = ref(null)
 export function openPlayer(id) {
   selectedPlayerId.value = id
   eventSearch.value = ''
-  // Seed the events rail with this player's per-user history (Phase 4); the
+  // Seed the events rail with this player's per-user history; the
   // socket `notification` handler then live-appends new events for them.
   loadUserEvents(id)
-  // Seed buffer A (captured evaluation attempts) so the completed-task
-  // "View evaluation" can open the full trace (PRD-inject-eval-provenance).
+  // Seed the attempt buffer (captured evaluation attempts) so the completed-task
+  // "View evaluation" can open the full trace.
   loadUserEvaluations(id)
 }
 export function closePlayer() {
@@ -505,10 +505,10 @@ export function closePlayer() {
 /* ------------------------------------------------------------------ */
 // The evaluation currently shown in the read-only EvaluationDebug overlay, or
 // null when closed. Shared drawer state so any surface can open the same renderer:
-// the completed-task "View evaluation" (Phase 4) and the event-history "Debug"
-// (Phase 5). Shape: { check, trigger, targetTool, traceRetained }.
+// the completed-task "View evaluation" and the event-history "Debug".
+// Shape: { check, trigger, targetTool, traceRetained }.
 export const activeEvaluation = ref(null)
-const EVAL_OUTCOME_SUCCESS = 1 // mirrors EvaluationDebug's OUTCOME_SUCCESS
+const EVAL_OUTCOME_SUCCESS = 1 // must match EvaluationDebug's OUTCOME_SUCCESS
 
 export function openEvaluation(payload) {
   activeEvaluation.value = payload
@@ -517,8 +517,8 @@ export function closeEvaluation() {
   activeEvaluation.value = null
 }
 
-// Surface 2 (Phase 4): open the passing evaluation for a completed task. Resolve
-// the rich captured attempt from buffer A by the completion's
+// Open the passing evaluation for a completed task. Resolve
+// the rich captured attempt from the buffer by the completion's
 // `provenance.attempt_id`; if it has rolled out of the ring, degrade to the
 // compact, session-durable provenance (recorded outcome + passing strategies, no
 // step trace). No-op when the task carries no provenance (the View control is
@@ -531,7 +531,7 @@ export function openTaskEvaluation(taskUuid) {
   const prov = c && c !== false ? c.provenance : null
   if (!prov) return
 
-  // Full trace, while the attempt is still retained in buffer A.
+  // Full trace, while the attempt is still retained in the attempt buffer.
   const attempt = userEvaluations.value.find((a) => a.id === prov.attempt_id)
   const check = attempt?.checks?.find((ck) => ck.inject_uuid === taskUuid)
   if (attempt && check) {
@@ -564,11 +564,11 @@ export function openTaskEvaluation(taskUuid) {
   })
 }
 
-// Surface 3 (Phase 5): open the full captured trace for one check of an
+// Open the full captured trace for one check of an
 // event-history row — the event↔attempt join (selectedPlayerEvents) resolved the
-// attempt from buffer A, so this looks it up the same way and picks the check by
+// attempt from the buffer, so this looks it up the same way and picks the check by
 // inject_uuid (falling back to the first check). The badge and this control both
-// read buffer A, so if the attempt is still shown it is still resolvable; the
+// read the attempt buffer, so if the attempt is still shown it is still resolvable; the
 // trace is always fully retained here (a rolled-out attempt carries no badge).
 export function openEventEvaluation(attemptId, injectUuid) {
   const attempt = userEvaluations.value.find((a) => a.id === attemptId)
@@ -655,11 +655,11 @@ export const selectedPlayer = computed(() => {
 // flagged "slow" — a soft monitoring hint on the timing list, not a hard rule.
 const SLOW_GAP_FACTOR = 1.5
 
-// Per-task timing profile for the drill-down drawer (Phase 2): each task of the
+// Per-task timing profile for the drill-down drawer: each task of the
 // selected exercise, in order, with its state (done / on-now / locked), the time
 // into the exercise it was completed, and the gap to the previous completion.
 //
-// Gaps mirror the backend exactly (leaderboard.py
+// Gaps match the backend exactly (leaderboard.py
 // `get_sorted_timestamps_for_completed_tasks` + the ascending sort in
 // `get_user_completion_time`): collect the completed timestamps, sort ascending,
 // and gap[i] = t[i] − t[i−1]; the first completion's gap is measured from
@@ -670,7 +670,7 @@ const SLOW_GAP_FACTOR = 1.5
 // Returns null when the drawer is closed or the player/exercise is gone, so it
 // stays off the 1s clock while closed; once open it reads `now` only for the
 // live "started N ago" / "idle N" labels on the current task(s), and touches one
-// player's handful of tasks — far below the O(P×T) roster passes item 6 guards.
+// player's handful of tasks — far below the O(P×T) roster passes kept off the clock.
 export const selectedPlayerTasks = computed(() => {
   const id = selectedPlayerId.value
   if (id === null) return null
@@ -736,7 +736,7 @@ export const selectedPlayerTasks = computed(() => {
       const atMs = c.timestamp ? c.timestamp * 1000 : null
       const atLabel = atMs !== null && start !== null ? fmtDur(atMs - start) : '—'
       const gapMs = g?.ms ?? null
-      // Surface 2 (Phase 4): "cleared by <method> <url> @ <time>" from the durable
+      // "cleared by <method> <url> @ <time>" from the durable
       // completion provenance. Null when none was retained (post-restore path) →
       // the row shows the "(provenance not retained)" note and no View control.
       const pv = c.provenance
@@ -806,7 +806,7 @@ export const selectedPlayerTasks = computed(() => {
   }
 })
 
-// Last-seen + activity sparkline for the drill-down drawer (Phase 3), derived
+// Last-seen + activity sparkline for the drill-down drawer, derived
 // from the per-user activity buffer (`userActivity[id]`, oldest → newest bucket;
 // the rightmost bucket is "now") and its config (`userActivityConfig`). Bucket
 // duration = 60 / buffer_resolution_per_minute seconds, exactly as the backend
@@ -860,7 +860,7 @@ export const selectedPlayerActivity = computed(() => {
   }
 })
 
-// Recent events for the drill-down drawer's events rail (Phase 4). Shapes the
+// Recent events for the drill-down drawer's events rail. Shapes the
 // per-user event history held in socket.js (`userEvents` — seeded from the
 // backend `get_user_events` ring on open, live-appended for this player) using
 // the same row treatment as the Live Feed (`feed`): a method chip, url /
@@ -868,8 +868,8 @@ export const selectedPlayerActivity = computed(() => {
 // the violet chip + tint the Live Feed uses, and a single hook line. Newest
 // first (the buffer is already ordered). Returns null while the drawer is closed
 // so it stays off the compute path; each event carries the server clock time.
-// Free-text filter for the events rail (Phase 4 follow-up). Matched against the
-// method, url / target_tool, and payload text — mirrors the Live Feed's `feed`
+// Free-text filter for the events rail. Matched against the
+// method, url / target_tool, and payload text — matches the Live Feed's `feed`
 // filter (searchUrl) so the same query behaves the same in both places. Reset
 // per player in openPlayer/closePlayer so it never carries across drawers.
 export const eventSearch = ref('')
@@ -888,14 +888,14 @@ function eventMatches(e, q) {
   return false
 }
 
-// Surface 3 (Phase 5): the per-event outcome badge, derived from the captured
+// The per-event outcome badge, derived from the captured
 // attempt joined onto this event by notification_id. `completed_any` → a single
 // "✓ completed <task>" badge (first cleared task + "+N"), opening the passing
 // trace. Otherwise → an expandable "checked N task(s)" badge whose rows carry each
 // checked task's pass/fail + inject `result` label + AND/OR join, each opening its
 // own trace. `null` for an un-evaluated event (or one whose attempt has rolled out
-// of buffer A) → no badge. Attempt id + inject_uuid ride along so the Debug control
-// re-resolves the same check from buffer A (see openEventEvaluation).
+// of the attempt buffer) → no badge. Attempt id + inject_uuid ride along so the Debug control
+// re-resolves the same check from the attempt buffer (see openEventEvaluation).
 function buildEvalOutcome(attempt) {
   if (!attempt) return null
   const checks = Array.isArray(attempt.checks) ? attempt.checks : []
@@ -934,10 +934,10 @@ export const selectedPlayerEvents = computed(() => {
   const q = eventSearch.value.trim().toLowerCase()
   const src = q ? userEvents.value.filter((e) => eventMatches(e, q)) : userEvents.value
 
-  // Join captured attempts (buffer A) onto the events by notification_id — the
-  // outcome badge source (surface 3). Bounded to retained attempts: an event whose
-  // attempt has rolled out of buffer A (or was never evaluated) gets no badge.
-  // First attempt wins per id (buffer A is newest-first; an id maps to one action).
+  // Join captured attempts onto the events by notification_id — the
+  // outcome badge source. Bounded to retained attempts: an event whose
+  // attempt has rolled out of the attempt buffer (or was never evaluated) gets no badge.
+  // First attempt wins per id (the attempt buffer is newest-first; an id maps to one action).
   const byNid = new Map()
   for (const a of userEvaluations.value) {
     const nid = a?.trigger?.notification_id
@@ -1055,7 +1055,7 @@ export const clock = computed(() => {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 })
 
-// Item 6 (perf): the earliest-completion anchor is O(P×T) to find, so cache it
+// The earliest-completion anchor is O(P×T) to find, so cache it
 // in its own data-driven computed (recomputes on progress change only); the live
 // clock then formats against it in O(1) each tick instead of rescanning.
 const exerciseStart = computed(() => {
@@ -1083,7 +1083,7 @@ export const elapsed = computed(() => {
 /* ------------------------------------------------------------------ */
 // Turns the raw socket/ZMQ signals into a three-state health light. O(1), so
 // ticking every second against the shared clock is free.
-//   LIVE     — socket up and a ZMQ message within STALE_SEC (mint, unchanged)
+//   LIVE     — socket up and a ZMQ message within STALE_SEC (mint)
 //   IDLE     — socket up but no ZMQ data yet, or gone quiet ≥ STALE_SEC (amber)
 //   OFFLINE  — socket down (red)
 // `zmqLastTime` is Unix seconds (or false/null before any keep_alive carries a
@@ -1281,10 +1281,10 @@ export const sceneCount = computed(() => (finishers.value.length ? 4 : 3))
 /* ------------------------------------------------------------------ */
 /* Rotating champion slot (On Fire / Speed Runner / Trophies)         */
 /* ------------------------------------------------------------------ */
-// Item 6 (perf): the champion sub-list page index advances every ROT_MS. Deriving
+// The champion sub-list page index advances every ROT_MS. Deriving
 // it in its own computed means it only changes value on that cadence — so the
 // `champions` view-model (which reads it) recomputes on rotation / scene / stats
-// change, not every 1s tick as it did when it read `now` directly.
+// change, not on every 1s tick.
 const championRot = computed(() => Math.floor(now.value / ROT_MS))
 
 function buildCard(ranked, fmt, fracOf) {
@@ -1359,7 +1359,7 @@ const SPEED_SEGMENTS = 10
 
 // Speed tiers keyed on the 0-10 Speed Index as a fraction of its ceiling; named
 // tiers are reserved for high performers, < 25% stays the unlabelled baseline.
-// Mirror of the on-fire heat tiers, in a cyan→white-hot palette with a ⚡ pulse
+// Matches the on-fire heat tiers, in a cyan→white-hot palette with a ⚡ pulse
 // that quickens with the tier.
 const SPEED_TIERS = [
   {
@@ -1427,8 +1427,7 @@ export const champions = computed(() => {
 
   // Speed runner — 0-10 Speed Index = speedrunner_score / perfect-run ceiling.
   // This IS the ranking quantity (monotonic with speedrunner_score), so the
-  // column tracks the leaderboard order — unlike the old avg-points-per-task
-  // value, which was mislabelled "seconds" and didn't track rank.
+  // column tracks the leaderboard order.
   const speedRanked = (userStats.value?.speed_runner || [])
     .filter((e) => (e.speedrunner_score ?? 0) > 0)
     .map((e) => ({ email: e.email, v: e.speedrunner_score }))
@@ -1584,7 +1583,7 @@ export const feed = computed(() => {
     const pl = hasPayload ? payloadToLines(e.payload) : { keyCount: 0, isString: false, lines: [] }
     const expandable =
       pl.lines.length > PAYLOAD_PREVIEW_LINES || pl.lines.some((l) => l.v.length > 60)
-    // Completion pip (surface 1): `notification_outcome` merges the cleared
+    // Completion pip: `notification_outcome` merges the cleared
     // task(s) onto the row in socket.js. Completed-only — evaluated-but-cleared-
     // nothing and un-evaluated rows carry no `completed_tasks`, so no pip. A
     // burst that clears several tasks in one action shows the first + "+N".
