@@ -48,7 +48,7 @@ server, but with synthetic, animated data so the board is alive the moment you l
   `reset` (rebuild the world), or `zmq-stale` / `zmq-fresh` (freeze / resume the reported
   ZMQ time — drives the Live Feed freshness light amber "NO LIVE DATA"; stopping the mock
   drops the socket → red "OFFLINE"). `GET /` reports the paused flag and lists the controls.
-- **Inject-evaluation provenance contract** (PRD-inject-eval-provenance, Phase 1): the mock also
+- **Inject-evaluation provenance contract**: the mock also
   synthesizes the "why did / didn't this count?" data the dashboard renders — per-user buffers of
   `EvaluationAttempt`s (passing + failing; `data_filtering` / `python` / `query_mirror` debug traces
   in the real engine's `{message,data,style}` shape, python groups being the raw
