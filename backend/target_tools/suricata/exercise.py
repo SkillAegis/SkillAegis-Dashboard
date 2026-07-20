@@ -27,20 +27,24 @@ def getInstalledSuricataVersion() -> Union[str, None]:
         return None
 
 
-async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict) -> bool:
+async def inject_checker_router(user_id: int, inject_evaluation: dict, data: dict, context: dict, debug: bool = False) -> Union[bool, tuple]:
+    # suricata is out of scope for trace capture (its shell-out/pcap result has a
+    # different shape). The `debug` param only keeps the router signature uniform
+    # with MISP/webhook — it returns an empty trace so a debug-mode caller does not
+    # error.
     if getInstalledSuricataVersion() is None:
-        return False
+        return (False, []) if debug else False
 
     rules = await get_data_to_validate(user_id, inject_evaluation, data)
     if rules is None:
         logger.debug('Could not fetch rules to validate')
-        return False
+        return (False, []) if debug else False
 
     data_to_validate = getEventsWithVerdictFromRules(rules)
     if inject_evaluation['evaluation_strategy'] == 'simulate_ips':
         outcome = eval_data_filtering(inject_evaluation, data_to_validate, context, False)
-        return outcome
-    return False
+        return (outcome, []) if debug else outcome
+    return (False, []) if debug else False
 
 
 async def get_data_to_validate(user_id: int, inject_evaluation: dict, data: dict) -> Union[dict, list, str, None]:

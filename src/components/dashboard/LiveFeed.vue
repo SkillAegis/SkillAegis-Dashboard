@@ -216,6 +216,11 @@ watch(
           <span class="sa-mono" style="font-size:13px;font-weight:600;color:var(--sa-text-2);width:70px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ e.user }}</span>
           <span class="sa-mono" style="font-size:10px;font-weight:800;letter-spacing:.5px;padding:3px 7px;border-radius:5px;min-width:44px;text-align:center;white-space:nowrap;" :style="{ color: e.methodFg, background: e.methodBg }">{{ e.method }}</span>
           <span class="sa-mono" style="font-size:12px;color:var(--sa-text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;">{{ e.url }}</span>
+          <!-- completion pip — completed-only; lit by notification_outcome merged
+               onto the row by notification_id (see dashboardState.feed) -->
+          <span v-if="e.cleared" class="sa-pip sa-mono sa-rise" :title="e.cleared.title">
+            <span class="ck">✓</span><span class="lbl">Cleared:</span><span class="tn">{{ e.cleared.label }}</span>
+          </span>
         </div>
         <div v-if="e.hasPayload" style="margin:7px 0 0 0;padding:7px 10px;border-radius:7px;background:rgba(var(--sa-bg-rgb),.6);border:1px solid rgba(var(--sa-cyan-rgb),.1);">
           <div
@@ -321,6 +326,46 @@ watch(
   color: #ffd0d0;
   background: rgba(var(--sa-danger-rgb), 0.18);
   border: 1px solid rgba(var(--sa-danger-rgb), 0.4);
+}
+/* completion pip — a mint ✓ chip naming the task an action cleared; completed-only. */
+.sa-pip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  color: #d7f7e6;
+  background: rgba(var(--sa-mint-rgb), 0.14);
+  border: 1px solid rgba(var(--sa-mint-rgb), 0.42);
+  box-shadow: 0 0 12px rgba(var(--sa-mint-rgb), 0.18);
+}
+.sa-pip .ck {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 900;
+  color: var(--sa-ink);
+  background: var(--sa-mint);
+  box-shadow: 0 0 8px rgba(var(--sa-mint-rgb), 0.6);
+}
+.sa-pip .lbl {
+  color: #8fdcb4;
+  font-weight: 600;
+}
+.sa-pip .tn {
+  color: #eafff4;
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .sa-payload-toggle {
   display: inline-block;

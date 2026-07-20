@@ -23,6 +23,14 @@ NOTIFICATION_MESSAGES = collections.deque([], NOTIFICATION_BUFFER_SIZE)
 PER_USER_NOTIFICATION_BUFFER_SIZE = 50
 USER_NOTIFICATION_MESSAGES = {}  # user_id -> deque(maxlen=…), newest first
 
+# Per-user inject-evaluation attempts. Each incoming action that triggers an
+# evaluation records ONE EvaluationAttempt (the captured {outcome, debug} trace of
+# every available task it was checked against), kept newest-first per user so the
+# drawer can answer "why did / didn't this count?". Bounded ring — the last X per
+# user. Ephemeral: never persisted to backup.json (all eval data is memory-only).
+ATTEMPT_BUFFER_SIZE = 20
+USER_EVALUATION_ATTEMPTS = {}  # user_id -> deque(maxlen=ATTEMPT_BUFFER_SIZE), newest first
+
 NOTIFICATION_HISTORY_BUFFER_RESOLUTION_PER_MIN = 12
 NOTIFICATION_HISTORY_BUFFER_TIMESPAN_MIN = 20
 NOTIFICATION_HISTORY_FREQUENCY = 60 / NOTIFICATION_HISTORY_BUFFER_RESOLUTION_PER_MIN
@@ -50,6 +58,16 @@ def addUserNotification(user_id: int, notification: dict):
    if user_id not in USER_NOTIFICATION_MESSAGES:
       USER_NOTIFICATION_MESSAGES[user_id] = collections.deque([], PER_USER_NOTIFICATION_BUFFER_SIZE)
    USER_NOTIFICATION_MESSAGES[user_id].appendleft(notification)
+
+def resetUserEvaluationAttempts():
+   global USER_EVALUATION_ATTEMPTS
+   USER_EVALUATION_ATTEMPTS = {}
+
+def addUserEvaluationAttempt(user_id: int, attempt: dict):
+   global USER_EVALUATION_ATTEMPTS
+   if user_id not in USER_EVALUATION_ATTEMPTS:
+      USER_EVALUATION_ATTEMPTS[user_id] = collections.deque([], ATTEMPT_BUFFER_SIZE)
+   USER_EVALUATION_ATTEMPTS[user_id].appendleft(attempt)
 
 def resetNotificationHistory():
    global NOTIFICATION_HISTORY

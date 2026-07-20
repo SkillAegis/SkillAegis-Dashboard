@@ -27,6 +27,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import backend.exercise as exercise_model
 import backend.notification as notification_model
+import backend.provenance as provenance_model
 import backend.db as db
 import backend.config as config
 from backend.appConfig import logger, admin_settings
@@ -312,6 +313,12 @@ async def get_user_events(sid, data):
     return notification_model.get_user_events(int(data['user_id']))
 
 @sio.event
+async def get_user_evaluations(sid, data):
+    # Per-user inject-evaluation attempts seeding the drawer's
+    # "why did / didn't this count?" view. Ungated, like get_user_events.
+    return provenance_model.get_user_evaluations(int(data['user_id']))
+
+@sio.event
 @require_auth
 async def mark_task_completed(sid, payload):
     exercise_model.mark_task_completed(int(payload['user_id']), payload['exercise_uuid'], payload['task_uuid'])
@@ -392,6 +399,9 @@ async def handleMessage(topic, s, message):
                 db.USER_ID_TO_AUTHKEY_MAPPING[user_id] = authkey
                 return
 
+        # Built (if this is an HTTP request) so the evaluation below can tie the
+        # attempt/provenance/feed-pip back to this exact feed row by notification id.
+        notification = None
         if notification_model.is_http_request(data):
             notification = notification_model.get_notification_message(data)
             if notification_model.is_accepted_notification(notification):
@@ -407,7 +417,7 @@ async def handleMessage(topic, s, message):
         if user_id is not None:
             if is_accepted_query_misp(data):
                 context = get_context(topic, user_id, data)
-                checking_task = exercise_model.check_active_tasks_debounced(user_id, data, context, 'MISP')
+                checking_task = exercise_model.check_active_tasks_debounced(user_id, data, context, 'MISP', notification=notification)
                 if checking_task is not None:  # Make sure check_active_tasks was not debounced
                     succeeded_once = await checking_task
                     if succeeded_once:
@@ -472,7 +482,7 @@ async def handleWebhook(data):
     await sio.emit("notification", notification)
 
     context = get_context('webhook', user_id, data)
-    checking_task = exercise_model.check_active_tasks(user_id, task_data, context, 'webhook')
+    checking_task = exercise_model.check_active_tasks(user_id, task_data, context, 'webhook', notification=notification)
     if checking_task is not None:  # Make sure check_active_tasks was not debounced. FIXME: This might not be necessary anymore.
         succeeded_once = await checking_task
         if succeeded_once:
@@ -496,6 +506,23 @@ async def sendUserInjectCheckInProgress(user: int, inject_uuid: str):
     await sio.emit('user_task_check_in_progress', {
         'user_id': user,
         'inject_uuid': inject_uuid
+    })
+
+
+async def sendUserEvaluationRecorded(user_id: int, attempt: dict):
+    # A newly captured EvaluationAttempt. The client live-prepends it to
+    # the open drawer's evaluation ring for this player.
+    await sio.emit('user_evaluation_recorded', {'user_id': user_id, 'attempt': attempt})
+
+
+async def sendNotificationOutcome(notification_id, user_id: int, completed_tasks: list):
+    # Emitted AFTER the triggering `notification` and only when a task cleared (the
+    # feed is completed-only) — lights the Live Feed completion pip on the row the
+    # client already rendered, merged by notification_id.
+    await sio.emit('notification_outcome', {
+        'notification_id': notification_id,
+        'user_id': user_id,
+        'completed_tasks': completed_tasks,
     })
 
 

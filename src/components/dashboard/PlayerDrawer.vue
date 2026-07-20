@@ -1,14 +1,12 @@
 <script setup>
 /**
  * Player drill-down drawer — a right-edge slide-over that profiles one
- * participant for the selected exercise (Variant B, signed off in Phase 0:
- * docs/archive/PRD-player-drilldown.md).
+ * participant for the selected exercise.
  *
- * Phase 1 builds the interaction surface, the dimming backdrop, and the header
- * (identity + rank + score + live status chips), plus the two-column body: a
- * scrolling main column and a full-height events rail whose list stays an
- * empty-state placeholder until Phase 4 populates it. Per-task timing (Phase 2)
- * and last-seen + sparkline (Phase 3) render below the header in later slices.
+ * The drawer is the interaction surface plus a dimming backdrop and a header
+ * (identity + rank + score + live status chips) over a two-column body: a
+ * scrolling main column (per-task timing, then last-seen + activity sparkline)
+ * and a full-height events rail listing this participant's recent events.
  *
  * The component is a pure view over `selectedPlayer`; open/close is just setting
  * `selectedPlayerId`. `open` tracks that computed directly, so a player leaving
@@ -18,13 +16,19 @@
 import { computed, ref, watch, nextTick, onUnmounted } from 'vue'
 import {
   selectedPlayer,
+  selectedPlayerId,
   selectedPlayerTasks,
   selectedPlayerActivity,
   selectedPlayerEvents,
   selectedPlayerEventsTotal,
   eventSearch,
-  closePlayer
+  closePlayer,
+  openTaskEvaluation,
+  openEventEvaluation,
+  activeEvaluation,
+  closeEvaluation
 } from './dashboardState.js'
+import EvaluationDebug from './EvaluationDebug.vue'
 import { reduceMotionOn } from '@/settings.js'
 
 const player = selectedPlayer
@@ -33,7 +37,24 @@ const activity = selectedPlayerActivity
 const events = selectedPlayerEvents
 const eventsTotal = selectedPlayerEventsTotal
 const search = eventSearch
+const evaluation = activeEvaluation
 const open = computed(() => player.value !== null)
+
+// Which "checked N task(s)" event rows are expanded to their per-task pass/fail
+// list. Keyed by event id (notification_id); local UI state,
+// reset when the drawer moves to another player so it never carries across.
+const expandedEvents = ref(new Set())
+function isEventExpanded(id) {
+  return expandedEvents.value.has(id)
+}
+function toggleEventExpand(id) {
+  const next = new Set(expandedEvents.value)
+  next.has(id) ? next.delete(id) : next.add(id)
+  expandedEvents.value = next
+}
+watch(selectedPlayerId, () => {
+  expandedEvents.value = new Set()
+})
 
 // Events-rail filter state: whether a query is active, and the header sub-line
 // (shows "N of M" while filtering so it's clear the buffer is deeper than shown).
@@ -48,7 +69,7 @@ const railSub = computed(() => {
 const drawerRef = ref(null)
 const closeBtnRef = ref(null)
 
-// Medal treatment on the rank badge only for a genuine top-3 scorer (mirrors the
+// Medal treatment on the rank badge only for a genuine top-3 scorer (matches the
 // leaderboard's `top`, which requires score > 0 — so rank 1 on an empty board
 // stays neutral rather than gold).
 const rankClass = computed(() => {
@@ -57,8 +78,8 @@ const rankClass = computed(() => {
 })
 
 // Slide from the right by default; a plain cross-fade when reduced motion is on
-// (the admin toggle from Enhancements item 7). The OS-level
-// prefers-reduced-motion is covered by the media query in <style> below.
+// (the admin toggle). The OS-level prefers-reduced-motion is covered by the
+// media query in <style> below.
 const drawerTransition = computed(() =>
   reduceMotionOn.value ? 'sa-drawer-fade' : 'sa-drawer-slide'
 )
@@ -79,6 +100,10 @@ function focusable() {
 }
 
 function onKeydown(e) {
+  // While the EvaluationDebug overlay is open it owns Esc + focus; defer to it so
+  // one Esc closes only the overlay (its listener fires in the bubble phase after
+  // this capture handler no-ops), not the drawer underneath.
+  if (evaluation.value) return
   if (e.key === 'Escape') {
     e.preventDefault()
     closePlayer()
@@ -171,7 +196,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               <span v-if="!player.chips.length" class="sa-chip sa-chip-none">no badges yet</span>
             </div>
           </div>
-          <!-- per-task timing & gaps (Phase 2) -->
+          <!-- per-task timing & gaps -->
           <div v-if="tasks" class="sa-sec">
             <div class="sa-sec-h">
               <span class="sa-sec-ttl">TASK TIMING</span>
@@ -216,6 +241,27 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                   <div v-else-if="t.state === 'done' && t.firstBlood" class="sa-tmeta sa-mono">
                     <span class="sa-fb">🩸 first blood</span>
                   </div>
+                  <!-- completed-task provenance ("cleared by …") +
+                       View evaluation. Durable line from the completion record;
+                       View opens the passing trace (full from the attempt buffer,
+                       else the compact recorded outcome). Blank note when none was
+                       retained. -->
+                  <template v-if="t.state === 'done'">
+                    <div v-if="t.clearedBy" class="sa-prov sa-mono">
+                      <span class="lead">cleared by</span>
+                      <span class="mth" :class="{ 'mth-hook': t.clearedBy.isHook }">{{
+                        t.clearedBy.method
+                      }}</span>
+                      <span class="u">{{ t.clearedBy.url }}</span>
+                      <span v-if="t.clearedBy.atTime" class="at">@ {{ t.clearedBy.atTime }}</span>
+                      <button type="button" class="sa-viewbtn" @click="openTaskEvaluation(t.key)">
+                        ▸ View evaluation
+                      </button>
+                    </div>
+                    <div v-else class="sa-prov sa-mono">
+                      <span class="sa-prov-blank">cleared by — (provenance not retained)</span>
+                    </div>
+                  </template>
                 </div>
                 <div class="sa-trt">
                   <template v-if="t.state === 'done'">
@@ -261,7 +307,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
               </div>
             </div>
           </div>
-          <!-- last-seen + activity sparkline (Phase 3) -->
+          <!-- last-seen + activity sparkline -->
           <div v-if="activity" class="sa-sec">
             <div class="sa-sec-h">
               <span class="sa-sec-ttl">LAST SEEN &amp; ACTIVITY</span>
@@ -293,7 +339,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
           </div>
         </div>
 
-        <!-- events rail — this participant's per-user history (Phase 4), newest
+        <!-- events rail — this participant's per-user history, newest
              first, seeded from the backend and live-appended on the notification push -->
         <div class="sa-erail">
           <div class="sa-erail-head">
@@ -337,6 +383,56 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
                     <div v-if="e.moreCount" class="sa-ev-more sa-mono">▸ {{ e.moreCount }} more</div>
                   </template>
                 </div>
+                <!-- per-event outcome badge — "✓ completed <task>" or
+                     an expandable "checked N task(s)"; un-evaluated rows carry none.
+                     Debug opens the captured trace in EvaluationDebug. -->
+                <div v-if="e.evalOutcome" class="sa-ev-out">
+                  <template v-if="e.evalOutcome.kind === 'completed'">
+                    <span class="sa-badge sa-badge-done sa-mono" :title="e.evalOutcome.title">
+                      <span class="ck">✓</span> completed {{ e.evalOutcome.label }}
+                    </span>
+                    <button
+                      type="button"
+                      class="sa-ev-dbg sa-mono"
+                      @click="openEventEvaluation(e.evalOutcome.attemptId, e.evalOutcome.injectUuid)"
+                    >
+                      Debug
+                    </button>
+                  </template>
+                  <button
+                    v-else
+                    type="button"
+                    class="sa-badge sa-badge-check sa-mono"
+                    :aria-expanded="isEventExpanded(e.id)"
+                    @click="toggleEventExpand(e.id)"
+                  >
+                    <span class="chev">{{ isEventExpanded(e.id) ? '▾' : '▸' }}</span>
+                    {{ e.evalOutcome.countLabel }}
+                  </button>
+                </div>
+                <div
+                  v-if="e.evalOutcome && e.evalOutcome.kind === 'checked' && isEventExpanded(e.id)"
+                  class="sa-checklist"
+                >
+                  <div v-for="(c, ci) in e.evalOutcome.checks" :key="ci" class="sa-crow">
+                    <span class="sa-cmark" :class="c.pass ? 'sa-cmark-pass' : 'sa-cmark-fail'">{{
+                      c.pass ? '✓' : '✕'
+                    }}</span>
+                    <div class="sa-cn">
+                      <div class="nm" :title="c.name">{{ c.name }}</div>
+                      <div class="rl sa-mono">
+                        result: <b>{{ c.resultLabel }}</b> · {{ c.joinType }}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      class="sa-cdbg sa-mono"
+                      @click="openEventEvaluation(c.attemptId, c.injectUuid)"
+                    >
+                      Debug
+                    </button>
+                  </div>
+                </div>
               </div>
             </template>
             <div v-else class="sa-erail-empty sa-mono">
@@ -348,6 +444,18 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
       </div>
     </aside>
   </Transition>
+
+  <!-- Captured-evaluation overlay (EvaluationDebug) — read-only, opened from a
+       completed task's "View evaluation". Teleports to <body>, so it renders
+       above the drawer regardless of where it sits in this tree. -->
+  <EvaluationDebug
+    v-if="evaluation"
+    :check="evaluation.check"
+    :trigger="evaluation.trigger"
+    :target-tool="evaluation.targetTool"
+    :trace-retained="evaluation.traceRetained"
+    @close="closeEvaluation"
+  />
 </template>
 
 <style scoped>
@@ -570,7 +678,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   color: var(--sa-text-5);
 }
 
-/* section scaffold (shared by Phase 2/3 sections in the main column) */
+/* section scaffold (shared by the sections in the main column) */
 .sa-sec {
   padding: 15px 24px;
   border-top: 1px solid rgba(var(--sa-cyan-rgb), 0.09);
@@ -713,6 +821,69 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   box-shadow: 0 0 7px rgba(var(--sa-cyan-rgb), 0.8);
   animation: sa-drawer-blink 1.3s infinite;
 }
+
+/* completed-task provenance line — "cleared by <method> <url> @ time"
+   + a View evaluation control. */
+.sa-prov {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 10.5px;
+  color: var(--sa-text-5);
+}
+.sa-prov .lead {
+  color: var(--sa-text-6);
+}
+.sa-prov .mth {
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--sa-mint);
+  background: rgba(var(--sa-mint-rgb), 0.12);
+}
+/* webhook clears borrow the app-wide violet treatment (HOOK reads the same
+   everywhere), matching the event rail and the Debug view's trigger banner. */
+.sa-prov .mth-hook {
+  color: var(--sa-violet);
+  background: rgba(var(--sa-violet-rgb), 0.16);
+}
+.sa-prov .u {
+  color: var(--sa-text-3);
+}
+.sa-prov .at {
+  color: var(--sa-text-5);
+}
+.sa-prov-blank {
+  color: var(--sa-text-6);
+  font-style: italic;
+}
+.sa-viewbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), 0.09);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.28);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-viewbtn:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
+  border-color: rgba(var(--sa-cyan-rgb), 0.5);
+}
+.sa-viewbtn:focus-visible {
+  outline: 2px solid var(--sa-cyan);
+  outline-offset: 2px;
+}
 .sa-trt {
   text-align: right;
   flex: none;
@@ -772,7 +943,7 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   }
 }
 
-/* last-seen + activity sparkline (ported from the Variant B mockup) */
+/* last-seen + activity sparkline */
 .sa-seen {
   display: flex;
   align-items: center;
@@ -854,8 +1025,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   color: var(--sa-text-6);
   margin-left: auto;
 }
-/* in-rail filter (ported from the Variant B mockup; input treatment matches the
-   Live Feed's .sa-input so the two search boxes read the same) */
+/* in-rail filter (input treatment matches the Live Feed's .sa-input so the two
+   search boxes read the same) */
 .sa-erail-search {
   flex: none;
   display: flex;
@@ -909,8 +1080,8 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
   line-height: 1.5;
 }
 
-/* event rows (ported from the Variant B mockup; webhook rows borrow the Live
-   Feed's violet treatment so the whole app tints webhooks the same) */
+/* event rows (webhook rows borrow the Live Feed's violet treatment so the whole
+   app tints webhooks the same) */
 .sa-ev {
   border-radius: 10px;
   padding: 8px 11px;
@@ -984,6 +1155,153 @@ onUnmounted(() => document.removeEventListener('keydown', onKeydown, true))
 .sa-ev-hook {
   font-size: 11px;
   color: #d9c690;
+}
+
+/* event-history outcome badges — interactive badges/controls are <button>s here
+   (keyboard-operable), so they set their own background/border/cursor and pick up
+   the mono face from .sa-mono. */
+.sa-ev-out {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+}
+.sa-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.sa-badge-done {
+  color: #d7f7e6;
+  background: rgba(var(--sa-mint-rgb), 0.13);
+  border: 1px solid rgba(var(--sa-mint-rgb), 0.4);
+}
+.sa-badge-done .ck {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 900;
+  color: var(--sa-ink);
+  background: var(--sa-mint);
+}
+.sa-badge-check {
+  color: var(--sa-text-3);
+  background: rgba(var(--sa-cyan-rgb), 0.08);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.24);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-badge-check:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.14);
+  border-color: rgba(var(--sa-cyan-rgb), 0.4);
+}
+.sa-badge-check .chev {
+  color: var(--sa-text-5);
+  font-size: 9px;
+}
+.sa-ev-dbg {
+  margin-left: auto;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(var(--sa-cyan-rgb), 0.09);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.26);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+.sa-ev-dbg:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
+  border-color: rgba(var(--sa-cyan-rgb), 0.5);
+}
+.sa-badge-check:focus-visible,
+.sa-ev-dbg:focus-visible,
+.sa-cdbg:focus-visible {
+  outline: 2px solid var(--sa-cyan);
+  outline-offset: 2px;
+}
+
+/* expanded checked-task list */
+.sa-checklist {
+  margin-top: 8px;
+  border-top: 1px dashed rgba(var(--sa-cyan-rgb), 0.14);
+  padding-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sa-crow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sa-cmark {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 900;
+}
+.sa-cmark-pass {
+  color: var(--sa-ink);
+  background: var(--sa-mint);
+}
+.sa-cmark-fail {
+  color: #ffe3e3;
+  background: rgba(var(--sa-danger-rgb), 0.28);
+  border: 1px solid rgba(var(--sa-danger-rgb), 0.6);
+}
+.sa-cn {
+  flex: 1;
+  min-width: 0;
+}
+.sa-cn .nm {
+  font-size: 12px;
+  color: var(--sa-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sa-cn .rl {
+  font-size: 10px;
+  color: var(--sa-text-5);
+  margin-top: 1px;
+}
+.sa-cn .rl b {
+  color: var(--sa-text-4);
+  font-weight: 600;
+}
+.sa-cdbg {
+  cursor: pointer;
+  flex: none;
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--sa-cyan);
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(var(--sa-cyan-rgb), 0.08);
+  border: 1px solid rgba(var(--sa-cyan-rgb), 0.24);
+  transition: background 0.15s;
+}
+.sa-cdbg:hover {
+  background: rgba(var(--sa-cyan-rgb), 0.16);
 }
 
 /* transitions — slide (default) / fade (reduced motion) + backdrop fade */
