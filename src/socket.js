@@ -6,9 +6,12 @@ import debounce from 'lodash.debounce'
 // "undefined" means the URL will be computed from the `window.location` object
 const URL = !import.meta.env.DEV ? '' : 'http://localhost:4001'
 const MAX_LIVE_LOG = 30
-// Per-user drawer history is a deeper ring than the global feed (mirrors the
+// Per-user drawer history is a deeper ring than the global feed (matches the
 // backend's PER_USER_NOTIFICATION_BUFFER_SIZE).
 const MAX_USER_EVENTS = 50
+// Per-user captured-evaluation ring, matching the backend's ATTEMPT_BUFFER_SIZE —
+// the "what went wrong on my last tries" store.
+const MAX_USER_EVALUATIONS = 20
 
 const initial_state = {
   notificationEvents: [],
@@ -25,11 +28,15 @@ const initial_state = {
   userStats: {},
   diagnostic: {},
   userEvents: [],
+  userEvaluations: [],
 }
 
 // Which participant `state.userEvents` currently holds, so the live `notification`
 // push only appends events for the open drawer's player (null when closed).
 let eventsUserId = null
+// Same, for `state.userEvaluations`: the live `user_evaluation_recorded` push only
+// prepends attempts for the open drawer's player (null when closed).
+let evaluationsUserId = null
 
 const state = reactive({ ...initial_state })
 const connectionState = reactive({
@@ -72,6 +79,7 @@ export const userAuthenticated = computed(() => connectionState.is_authenticated
 export const userTaskCheckInProgress = computed(() => state.userTaskCheckInProgress)
 export const userStats = computed(() => state.userStats)
 export const userEvents = computed(() => state.userEvents)
+export const userEvaluations = computed(() => state.userEvaluations)
 
 export function resetState() {
   Object.assign(state, initial_state)
@@ -136,6 +144,26 @@ export function loadUserEvents(user_id) {
 export function clearUserEvents() {
   eventsUserId = null
   state.userEvents = []
+}
+
+// Player drill-down drawer: seed this participant's ring of captured
+// EvaluationAttempts so the drawer's completed-task "View evaluation" and
+// event-history outcomes have the full traces; the `user_evaluation_recorded`
+// handler then live-prepends new attempts for them.
+export function loadUserEvaluations(user_id) {
+  evaluationsUserId = user_id
+  state.userEvaluations = []
+  socket.emit('get_user_evaluations', { user_id }, (evals) => {
+    // Guard against a stale ack after the drawer moved to another player / closed.
+    if (evaluationsUserId === user_id) {
+      state.userEvaluations = Array.isArray(evals) ? evals : []
+    }
+  })
+}
+
+export function clearUserEvaluations() {
+  evaluationsUserId = null
+  state.userEvaluations = []
 }
 
 export function reloadFromDisk() {
@@ -293,7 +321,7 @@ async function doLogout() {
     })
 
     // Drop client auth state regardless, then reconnect so the socket's
-    // handshake session no longer carries the (now invalidated) auth — mirrors
+    // handshake session no longer carries the (now invalidated) auth — matches
     // doLogin's rebind.
     connectionState.is_authenticated = false
     socket.disconnect()
@@ -396,7 +424,7 @@ function sendRemediateSetting(setting, cb) {
     name: setting
   }
   socket.emit('remediate_setting', payload, (result) => {
-    emitReplyHandler(reply)
+    emitReplyHandler(result)
     cb(result)
   })
 }
@@ -459,6 +487,28 @@ socket.on('user_task_check_in_progress', ({ user_id, inject_uuid }) => {
   setTimeout(() => {
     state.userTaskCheckInProgress[`${user_id}_${inject_uuid}`] = false
   }, 3000);
+})
+
+// Emitted after an evaluation that cleared a task, carrying the id of the feed
+// row that triggered it (the feed is completed-only — nothing is pushed for
+// actions that cleared nothing). Merge the cleared tasks onto the already-
+// rendered feed row so LiveFeed can light its completion pip; best-effort, so a
+// row that has scrolled out of the ring simply goes unmarked.
+socket.on('notification_outcome', ({ notification_id, completed_tasks }) => {
+  const row = state.notificationEvents.find((n) => n.id === notification_id)
+  if (row) {
+    row.completed_tasks = Array.isArray(completed_tasks) ? completed_tasks : []
+  }
+})
+
+// A newly captured evaluation attempt. Live-prepend to the open drawer's
+// evaluation ring for this player only, so its "View evaluation" traces stay
+// current as completions happen while the drawer is open — matching how
+// `notification` feeds `userEvents`.
+socket.on('user_evaluation_recorded', ({ user_id, attempt }) => {
+  if (evaluationsUserId !== null && user_id === evaluationsUserId && attempt) {
+    addLimited(state.userEvaluations, attempt, MAX_USER_EVALUATIONS)
+  }
 })
 
 function addLimited(target, message, maxCount) {

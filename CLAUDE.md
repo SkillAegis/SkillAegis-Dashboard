@@ -39,9 +39,27 @@ server, but with synthetic, animated data so the board is alive the moment you l
   `pause` / `resume` (freeze for screenshots), `clear` (everyone clears),
   `clear/<user_id>` (one player clears — drives the all-clear burst),
   `checking/<user_id>` (fire a "being validated" pulse on a player's next available
-  task — drives the per-task spinner), `empty` (wipe the board),
+  task — drives the per-task spinner),
+  `eval-pass/<user_id>` (clear a player's next task via a full evaluation — drives the
+  Live Feed completion pip, an inspectable **passing** attempt + completion provenance),
+  `eval-fail/<user_id>` (record a failing "checked, cleared nothing" attempt — an
+  inspectable **failing** trace; add `?large=1` to force the over-cap bounded-preview
+  data dump), `empty` (wipe the board),
   `reset` (rebuild the world), or `zmq-stale` / `zmq-fresh` (freeze / resume the reported
   ZMQ time — drives the Live Feed freshness light amber "NO LIVE DATA"; stopping the mock
   drops the socket → red "OFFLINE"). `GET /` reports the paused flag and lists the controls.
+- **Inject-evaluation provenance contract**: the mock also
+  synthesizes the "why did / didn't this count?" data the dashboard renders — per-user buffers of
+  `EvaluationAttempt`s (passing + failing; `data_filtering` / `python` / `query_mirror` debug traces
+  in the real engine's `{message,data,style}` shape, python groups being the raw
+  `{status,exit_code,stdout,stderr,duration}` sandbox result). It answers the `get_user_evaluations`
+  ack, pushes `user_evaluation_recorded` + `notification_outcome`, attaches `provenance` to completed
+  tasks in the `update_progress` snapshot, and stores over-cap data dumps as a bounded preview *at
+  capture time* (size/shape `data_meta` header + a "truncated at capture" note). A deterministic
+  minority of seeded completions are left provenance-less to exercise the post-restore
+  "cleared by — (provenance not retained)" path. Because the Live Feed completion pip (surface 1) is
+  otherwise a *live* augmentation (invisible until a completion fires), the mock also seeds **one**
+  real completion as a top-of-feed row already carrying `completed_tasks`, so the pip is inspectable
+  on first load like the drawer surfaces — fire `eval-pass/<id>` for more, live.
 - It does **not** run the evaluation engine, scoring math, or scenario format — for that use the
   real backend (`--zmq_log_file` replays a recorded session). See `docs/archive/PRD-ui-testing.md`.
